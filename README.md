@@ -1,38 +1,39 @@
 # Full-duplex Local Intercom
 
-An Android-native, LAN-first full-duplex push-to-talk intercom for up to six participants per room.
+An Android-native, LAN-first intercom project for up to six participants per room.
 
-> Status: project foundation and technical design. Audio transport, Bluetooth PTT, room discovery, and host recovery are planned implementation milestones and are not implemented yet.
+## Implemented: Milestone 1 — Room management and LAN discovery
 
-## Product goals
+- Create a room with a display name and room name. The creator runs an embedded Ktor WebSocket server and is the host.
+- Advertise and discover rooms on the local network through Android NSD/mDNS.
+- Join a discovered room or enter the host IP address, port, and session token manually.
+- Enforce a six-member limit, including the host, and validate the room session token.
+- Show room and member state, including real-time joins and departures, and leave/close a room.
+- Use a versioned WebSocket control protocol. See [docs/NETWORK_PROTOCOL.md](docs/NETWORK_PROTOCOL.md).
 
-- Android app built with Kotlin and Jetpack Compose.
-- Operates over an existing Wi-Fi LAN without requiring internet access.
-- Up to 6 participants per room, with multiple independent channels.
-- Full-duplex audio: multiple participants may transmit simultaneously.
-- Push-to-talk: a participant's microphone is transmitted only while PTT is active.
-- Screen-off listening and PTT through supported Bluetooth headset media buttons.
-- Any participant may create a room; host handover/election is a resilience goal.
+The host must keep the app process running while hosting. Closing/leaving the room stops its server and withdraws its NSD advertisement. Background hosting and recovery after host process loss are not implemented.
 
-## Initial technical direction
+## Not implemented yet
 
-- Android min SDK: API 29 (Android 10).
-- UI and app architecture: Jetpack Compose, MVVM, Clean Architecture.
-- Audio: WebRTC peer-to-peer audio with Opus and DTLS-SRTP.
-- Signaling/control: embedded Ktor HTTP/WebSocket server on the current host.
-- LAN discovery: Android Network Service Discovery (NSD/mDNS), with QR/manual-IP fallback.
-- Persistence: Room and DataStore.
-- Background operation: microphone foreground service with persistent notification.
+WebRTC, audio transport, push-to-talk, Bluetooth headset controls, host recovery, and persistent room storage are not part of Milestone 1.
+
+## Requirements and network notes
+
+- Android minimum SDK: API 29 (Android 10).
+- Built with Kotlin and Jetpack Compose, using MVVM and Clean Architecture.
+- Both devices need to be on a reachable local network. The access point must allow client-to-client traffic; client/AP isolation can prevent joining.
+- Discovery depends on Wi-Fi multicast/mDNS. If multicast is unavailable, use manual join with the host IP, port, and session token.
+- No internet service is required for local room signaling. Do not expose the host port to untrusted networks: Milestone 1 uses a room session token but does not include transport encryption or account-based identity.
+
+## Build and test
+
+From the repository root:
+
+```bash
+./gradlew :app:testDebugUnitTest
+./gradlew :app:assembleDebug
+```
+
+## Project documentation
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/NETWORK_PROTOCOL.md](docs/NETWORK_PROTOCOL.md), [docs/AUDIO_ENGINE.md](docs/AUDIO_ENGINE.md), and [docs/TEST_PLAN.md](docs/TEST_PLAN.md).
-
-## Important constraints
-
-- The Wi-Fi access point must permit client-to-client traffic; AP/client isolation must be disabled.
-- LAN-only ICE host candidates are the initial connection strategy. No external STUN/TURN service is required or assumed.
-- Generic Bluetooth headsets expose different media-button events. Reliable hold/release PTT depends on the headset and Android device; toggle-PTT is the compatibility fallback.
-- Performance targets in the design documents are acceptance goals, not measured guarantees.
-
-## Development status
-
-The repository currently contains the project baseline and design documents. The next milestone is to open the project in Android Studio, sync Gradle, then implement and validate room signaling between two Android devices on the same Wi-Fi network before adding WebRTC audio.

@@ -18,6 +18,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
 import org.json.JSONObject
 
@@ -29,8 +31,9 @@ internal class KtorRoomClient(
     private val httpClient = HttpClient(CIO) {
         install(WebSockets) { maxFrameSize = MAX_MESSAGE_BYTES }
     }
-    private var session: DefaultClientWebSocketSession? = null
-    private var receiveJob: Job? = null
+    @Volatile private var session: DefaultClientWebSocketSession? = null
+    @Volatile private var receiveJob: Job? = null
+    private val sendMutex = Mutex()
 
     suspend fun join(
         hostAddress: String,
@@ -45,7 +48,7 @@ internal class KtorRoomClient(
             httpClient.webSocketSession("ws://$urlHost:$port${RoomProtocol.SERVICE_PATH}")
         }
         try {
-            socket.send(Frame.Text(RoomProtocol.joinRequest(roomId, displayName, sessionToken).toString()))
+            sendFrame(socket, Frame.Text(RoomProtocol.joinRequest(roomId, displayName, sessionToken).toString()))
             val firstFrame = withTimeout(CONNECTION_TIMEOUT_MILLIS) { socket.incoming.receive() }
             if (firstFrame !is Frame.Text) throw IllegalStateException("The room returned an invalid response.")
             val event = RoomProtocol.parse(firstFrame.readText())
@@ -107,7 +110,8 @@ internal class KtorRoomClient(
                         if (isClosed) break
                     }
                     RoomProtocol.HEARTBEAT -> {
-                        socket.send(
+                        sendFrame(
+                            socket,
                             Frame.Text(
                                 RoomProtocol.createEvent(
                                     RoomProtocol.HEARTBEAT,
@@ -132,13 +136,19 @@ internal class KtorRoomClient(
         }
     }
 
+    private suspend fun sendFrame(socket: DefaultClientWebSocketSession, frame: Frame) {
+        sendMutex.withLock { socket.send(frame) }
+    }
+
     suspend fun leave() {
         val socket = session
         session = null
         if (socket != null) {
             runCatching {
-                socket.send(Frame.Text(RoomProtocol.createEvent(RoomProtocol.LEAVE_ROOM).toString()))
-                socket.close(CloseReason(CloseReason.Codes.NORMAL, "Leaving room."))
+                sendMutex.withLock {
+                    socket.send(Frame.Text(RoomProtocol.createEvent(RoomProtocol.LEAVE_ROOM).toString()))
+                    socket.close(CloseReason(CloseReason.Codes.NORMAL, "Leaving room."))
+                }
             }
         }
         receiveJob?.cancel()

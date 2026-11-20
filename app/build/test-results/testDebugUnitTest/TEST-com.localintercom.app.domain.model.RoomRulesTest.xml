@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.localintercom.app.domain.model.RoomRulesTest" tests="8" skipped="0" failures="0" errors="0" timestamp="2026-11-20T21:25:03.184Z" hostname="DESKTOP-KF6EAK0" time="0.185">
+  <properties/>
+  <testcase name="hostCannotBeRemovedAsAnOrdinaryMember" classname="com.localintercom.app.domain.model.RoomRulesTest" time="0.094"/>
+  <testcase name="leavingMemberUpdatesSnapshotAndMakesCapacityAvailableAgain" classname="com.localintercom.app.domain.model.RoomRulesTest" time="0.02"/>
+  <testcase name="concurrentJoinAttemptsNeverExceedSixMembersIncludingHost" classname="com.localintercom.app.domain.model.RoomRulesTest" time="0.036"/>
+  <testcase name="manualEndpointValidatesIpAndPort" classname="com.localintercom.app.domain.model.RoomRulesTest" time="0.002"/>
+  <testcase name="displayNameIsTrimmedAndMustFitTheAllowedLength" classname="com.localintercom.app.domain.model.RoomRulesTest" time="0.001"/>
+  <testcase name="roomNameIsTrimmedAndMustFitTheAllowedLength" classname="com.localintercom.app.domain.model.RoomRulesTest" time="0.0"/>
+  <testcase name="hostCanAcceptAtMostFiveAdditionalMembers" classname="com.localintercom.app.domain.model.RoomRulesTest" time="0.001"/>
+  <testcase name="sessionTokenComparisonAcceptsOnlyTheExactToken" classname="com.localintercom.app.domain.model.RoomRulesTest" time="0.002"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

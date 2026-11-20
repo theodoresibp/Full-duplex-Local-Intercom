@@ -1,7 +1,14 @@
 package com.localintercom.app.domain.model
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -29,6 +36,51 @@ class RoomRulesTest {
     }
 
     @Test
+    fun concurrentJoinAttemptsNeverExceedSixMembersIncludingHost() = runBlocking {
+        val roster = RoomRoster(hostMember())
+        val results = withContext(Dispatchers.Default) {
+            (1..32).map { index ->
+                async {
+                    roster.tryAdd(RoomMember("member-$index", "Member $index", isHost = false))
+                }
+            }.awaitAll()
+        }
+
+        assertEquals(5, results.count { it != null })
+        val members = roster.snapshot()
+        assertEquals(RoomRules.MAX_MEMBERS, members.size)
+        assertTrue(members.first().isHost)
+    }
+
+    @Test
+    fun leavingMemberUpdatesSnapshotAndMakesCapacityAvailableAgain() = runBlocking {
+        val roster = RoomRoster(hostMember())
+        val joiningMember = RoomMember("member-1", "Theo", isHost = false)
+
+        val afterJoin = roster.tryAdd(joiningMember)
+        assertNotNull(afterJoin)
+        assertEquals(listOf("host", "member-1"), afterJoin!!.members.map(RoomMember::id))
+
+        val afterLeave = roster.remove(joiningMember.id)
+        assertNotNull(afterLeave)
+        assertEquals(joiningMember, afterLeave!!.member)
+        assertEquals(listOf("host"), afterLeave.members.map(RoomMember::id))
+
+        val replacement = RoomMember("member-2", "Guest", isHost = false)
+        val afterReplacement = roster.tryAdd(replacement)
+        assertNotNull(afterReplacement)
+        assertEquals(listOf("host", "member-2"), afterReplacement!!.members.map(RoomMember::id))
+    }
+
+    @Test
+    fun hostCannotBeRemovedAsAnOrdinaryMember() = runBlocking {
+        val roster = RoomRoster(hostMember())
+
+        assertNull(roster.remove("host"))
+        assertEquals(listOf("host"), roster.snapshot().map(RoomMember::id))
+    }
+
+    @Test
     fun sessionTokenComparisonAcceptsOnlyTheExactToken() {
         assertTrue(RoomRules.isSessionTokenValid("secret-token", "secret-token"))
         assertFalse(RoomRules.isSessionTokenValid("secret-token", "wrong-token"))
@@ -45,4 +97,6 @@ class RoomRulesTest {
         assertFalse(RoomRules.isValidPort(0))
         assertFalse(RoomRules.isValidPort(65_536))
     }
+
+    private fun hostMember() = RoomMember("host", "Host", isHost = true)
 }

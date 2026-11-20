@@ -1,6 +1,7 @@
 package com.localintercom.app.data.network
 
 import com.localintercom.app.domain.model.RoomMember
+import com.localintercom.app.domain.model.RoomRoster
 import com.localintercom.app.domain.model.RoomRules
 import com.localintercom.app.domain.model.RoomStatus
 import io.ktor.server.application.install
@@ -14,21 +15,26 @@ import io.ktor.server.websocket.webSocket
 import io.ktor.websocket.CloseReason
 import io.ktor.websocket.Frame
 import io.ktor.websocket.close
-import io.ktor.websocket.send
 import io.ktor.websocket.readText
+import io.ktor.websocket.send
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.awaitAll
 import org.json.JSONObject
+import java.io.IOException
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
@@ -42,12 +48,13 @@ internal class KtorRoomServer(
     private val onMembersChanged: (List<RoomMember>) -> Unit
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val membersMutex = Mutex()
-    private val members = mutableListOf(hostMember)
+    private val roomEventsMutex = Mutex()
+    private val roster = RoomRoster(hostMember)
     private val clients = ConcurrentHashMap<String, ClientSocket>()
     private var server: EmbeddedServer<*, *>? = null
     private var heartbeatJob: Job? = null
-    private var closed = false
+    @Volatile private var closed = false
+
     var port: Int = 0
         private set
 
@@ -62,22 +69,43 @@ internal class KtorRoomServer(
             }
         }
         server = engine
-        engine.startSuspend(wait = false)
-        port = engine.engine.resolvedConnectors().firstOrNull()?.port
-            ?: throw IllegalStateException("The room server did not report its listening port.")
+        try {
+            engine.startSuspend(wait = false)
+            port = engine.engine.resolvedConnectors().firstOrNull()?.port
+                ?: throw IllegalStateException("The room server did not report its listening port.")
+        } catch (error: Throwable) {
+            try {
+                engine.stopSuspend(
+                    gracePeriodMillis = SERVER_SHUTDOWN_GRACE_MILLIS,
+                    timeoutMillis = SERVER_SHUTDOWN_TIMEOUT_MILLIS
+                )
+            } finally {
+                server = null
+                scope.cancel()
+            }
+            throw error
+        }
         heartbeatJob = scope.launch {
             while (isActive && !closed) {
-                delay(5_000)
-                broadcast(RoomProtocol.HEARTBEAT, JSONObject().put("timestamp", System.currentTimeMillis()))
+                delay(HEARTBEAT_INTERVAL_MILLIS)
+                roomEventsMutex.withLock {
+                    if (!closed) {
+                        broadcast(
+                            RoomProtocol.HEARTBEAT,
+                            JSONObject().put("timestamp", System.currentTimeMillis())
+                        )
+                    }
+                }
             }
         }
         return port
     }
 
     private suspend fun handleClient(socket: DefaultWebSocketServerSession) {
-        var acceptedMember: RoomMember? = null
+        var rosterMemberId: String? = null
+        var accepted = false
         try {
-            val firstFrame = withTimeout(10_000) { socket.incoming.receive() }
+            val firstFrame = withTimeout(JOIN_TIMEOUT_MILLIS) { socket.incoming.receive() }
             if (firstFrame !is Frame.Text) {
                 reject(socket, "invalid_message", "The first room message must be a join request.")
                 return
@@ -106,45 +134,55 @@ internal class KtorRoomServer(
                 return
             }
 
-            val member = membersMutex.withLock {
-                if (closed || !RoomRules.canAcceptMember(members.size)) {
-                    null
+            val joinResult = roomEventsMutex.withLock {
+                if (closed) {
+                    JoinResult.Rejected("room_closed", "The host has closed this room.")
                 } else {
-                    RoomMember(UUID.randomUUID().toString(), displayName, isHost = false).also {
-                        members += it
+                    val member = RoomMember(UUID.randomUUID().toString(), displayName, isHost = false)
+                    val change = roster.tryAdd(member)
+                    if (change == null) {
+                        JoinResult.Rejected("room_full", "This room is full (6/6).")
+                    } else {
+                        rosterMemberId = member.id
+                        val socketClient = ClientSocket(socket)
+                        val acceptedPayload = JSONObject()
+                            .put("memberId", member.id)
+                            .put(
+                                "room",
+                                roomStatePayload(change.members, roomStatus(change.members))
+                            )
+                        val acceptedFrame = RoomProtocol.createEvent(
+                            RoomProtocol.JOIN_ACCEPTED,
+                            acceptedPayload,
+                            request.requestId
+                        ).toString()
+                        if (!socketClient.sendSafely(acceptedFrame)) {
+                            throw IOException("Could not deliver the room join response.")
+                        }
+
+                        accepted = true
+                        clients[member.id] = socketClient
+                        broadcast(
+                            RoomProtocol.MEMBER_JOINED,
+                            JSONObject().put("member", RoomProtocol.memberToJson(member))
+                        )
+                        broadcastRoomState(change.members)
+                        onMembersChanged(change.members)
+                        JoinResult.Accepted
                     }
                 }
             }
-            if (member == null) {
-                reject(socket, if (closed) "room_closed" else "room_full", if (closed) "The host has closed this room." else "This room is full (6/6).")
-                return
-            }
 
-            acceptedMember = member
-            val snapshot = snapshotMembers()
-            val roomPayload = RoomProtocol.roomStatePayload(
-                roomId, roomName, hostName, snapshot, roomStatus(snapshot)
-            )
-            socket.send(
-                Frame.Text(
-                    RoomProtocol.createEvent(
-                        RoomProtocol.JOIN_ACCEPTED,
-                        JSONObject().put("memberId", member.id).put("room", roomPayload),
-                        request.requestId
-                    ).toString()
-                )
-            )
-            clients[member.id] = ClientSocket(socket)
-            broadcast(RoomProtocol.MEMBER_JOINED, JSONObject().put("member", RoomProtocol.memberToJson(member)))
-            broadcastRoomState()
-            onMembersChanged(snapshot)
-            readClientEvents(socket)
+            when (joinResult) {
+                is JoinResult.Rejected -> reject(socket, joinResult.reason, joinResult.message)
+                JoinResult.Accepted -> readClientEvents(socket)
+            }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Throwable) {
             // Socket shutdown and malformed client frames are handled as a normal disconnect.
         } finally {
-            acceptedMember?.let { removeMember(it.id) }
+            rosterMemberId?.let { removeMember(it, announce = accepted) }
         }
     }
 
@@ -160,77 +198,128 @@ internal class KtorRoomServer(
     }
 
     private suspend fun reject(socket: DefaultWebSocketServerSession, reason: String, message: String) {
-        runCatching {
-            socket.send(
-                Frame.Text(
-                    RoomProtocol.createEvent(
-                        RoomProtocol.JOIN_REJECTED,
-                        JSONObject().put("reason", reason).put("message", message)
-                    ).toString()
-                )
+        val client = ClientSocket(socket)
+        val response = RoomProtocol.createEvent(
+            RoomProtocol.JOIN_REJECTED,
+            JSONObject().put("reason", reason).put("message", message)
+        ).toString()
+        client.sendSafely(response)
+        client.closeSafely(CloseReason(CloseReason.Codes.VIOLATED_POLICY, message.take(120)))
+    }
+
+    private suspend fun removeMember(memberId: String, announce: Boolean) {
+        roomEventsMutex.withLock {
+            val change = roster.remove(memberId) ?: return
+            clients.remove(memberId)
+            if (closed || !announce) return
+
+            broadcast(
+                RoomProtocol.MEMBER_LEFT,
+                JSONObject().put("memberId", change.member.id)
             )
-            socket.close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, message.take(120)))
+            broadcastRoomState(change.members)
+            onMembersChanged(change.members)
         }
     }
-
-    private suspend fun removeMember(memberId: String) {
-        val removed = membersMutex.withLock {
-            clients.remove(memberId)
-            members.firstOrNull { it.id == memberId }?.also { members.remove(it) }
-        } ?: return
-        val snapshot = snapshotMembers()
-        broadcast(RoomProtocol.MEMBER_LEFT, JSONObject().put("memberId", removed.id))
-        broadcastRoomState()
-        onMembersChanged(snapshot)
-    }
-
-    private suspend fun snapshotMembers(): List<RoomMember> =
-        membersMutex.withLock { members.toList() }
 
     private fun roomStatus(snapshot: List<RoomMember>): RoomStatus =
         if (snapshot.size >= RoomRules.MAX_MEMBERS) RoomStatus.FULL else RoomStatus.OPEN
 
-    private suspend fun broadcastRoomState() {
-        val snapshot = snapshotMembers()
-        broadcast(
-            RoomProtocol.ROOM_STATE,
-            RoomProtocol.roomStatePayload(roomId, roomName, hostName, snapshot, roomStatus(snapshot))
-        )
+    private fun roomStatePayload(
+        members: List<RoomMember>,
+        status: RoomStatus
+    ): JSONObject = RoomProtocol.roomStatePayload(roomId, roomName, hostName, members, status)
+
+    private suspend fun broadcastRoomState(members: List<RoomMember>) {
+        broadcast(RoomProtocol.ROOM_STATE, roomStatePayload(members, roomStatus(members)))
     }
 
     private suspend fun broadcast(event: String, payload: JSONObject) {
-        val message = Frame.Text(RoomProtocol.createEvent(event, payload).toString())
-        clients.values.toList().forEach { it.sendSafely(message) }
+        val message = RoomProtocol.createEvent(event, payload).toString()
+        val recipients = clients.values.toList()
+        coroutineScope {
+            recipients.map { client -> async { client.sendSafely(message) } }.awaitAll()
+        }
     }
 
     suspend fun stop() {
-        if (closed) return
-        closed = true
-        heartbeatJob?.cancel()
-        runCatching {
-            broadcast(
-                RoomProtocol.ROOM_STATE,
-                RoomProtocol.roomStatePayload(roomId, roomName, hostName, snapshotMembers(), RoomStatus.CLOSED)
+        val shouldStop = roomEventsMutex.withLock {
+            if (closed) {
+                false
+            } else {
+                closed = true
+                heartbeatJob?.cancel()
+                val members = roster.snapshot()
+                runCatching {
+                    broadcast(
+                        RoomProtocol.ROOM_STATE,
+                        roomStatePayload(members, RoomStatus.CLOSED)
+                    )
+                }
+                val activeClients = clients.values.toList()
+                clients.clear()
+                activeClients.forEach { client ->
+                    client.closeSafely(
+                        CloseReason(CloseReason.Codes.GOING_AWAY, "Host left the room.")
+                    )
+                }
+                true
+            }
+        }
+        if (!shouldStop) return
+
+        try {
+            server?.stopSuspend(
+                gracePeriodMillis = SERVER_SHUTDOWN_GRACE_MILLIS,
+                timeoutMillis = SERVER_SHUTDOWN_TIMEOUT_MILLIS
             )
+        } finally {
+            server = null
+            scope.cancel()
         }
-        clients.values.toList().forEach { client ->
-            runCatching { client.socket.close(CloseReason(CloseReason.Codes.GOING_AWAY, "Host left the room.")) }
-        }
-        clients.clear()
-        server?.stopSuspend(gracePeriodMillis = 250, timeoutMillis = 1_000)
-        server = null
-        scope.cancel()
     }
 
-    companion object {
-        private const val MAX_MESSAGE_BYTES = 8_192L
+    private sealed interface JoinResult {
+        data object Accepted : JoinResult
+        data class Rejected(val reason: String, val message: String) : JoinResult
     }
 
     private class ClientSocket(val socket: DefaultWebSocketServerSession) {
         private val sendMutex = Mutex()
 
-        suspend fun sendSafely(frame: Frame) {
-            runCatching { sendMutex.withLock { socket.send(frame) } }
+        suspend fun sendSafely(message: String): Boolean {
+            return try {
+                withTimeout(SOCKET_SEND_TIMEOUT_MILLIS) {
+                    sendMutex.withLock { socket.send(Frame.Text(message)) }
+                }
+                true
+            } catch (_: TimeoutCancellationException) {
+                closeSafely(CloseReason(CloseReason.Codes.GOING_AWAY, "WebSocket send timed out."))
+                false
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Throwable) {
+                closeSafely(CloseReason(CloseReason.Codes.GOING_AWAY, "WebSocket send failed."))
+                false
+            }
         }
+
+        suspend fun closeSafely(reason: CloseReason) {
+            runCatching {
+                withTimeout(SOCKET_CLOSE_TIMEOUT_MILLIS) {
+                    sendMutex.withLock { socket.close(reason) }
+                }
+            }
+        }
+    }
+
+    companion object {
+        private const val MAX_MESSAGE_BYTES = 8_192L
+        private const val JOIN_TIMEOUT_MILLIS = 10_000L
+        private const val HEARTBEAT_INTERVAL_MILLIS = 5_000L
+        private const val SOCKET_SEND_TIMEOUT_MILLIS = 2_000L
+        private const val SOCKET_CLOSE_TIMEOUT_MILLIS = 500L
+        private const val SERVER_SHUTDOWN_GRACE_MILLIS = 250L
+        private const val SERVER_SHUTDOWN_TIMEOUT_MILLIS = 1_000L
     }
 }
