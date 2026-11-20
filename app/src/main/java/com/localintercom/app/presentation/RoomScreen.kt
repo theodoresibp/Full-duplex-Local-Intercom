@@ -1,0 +1,257 @@
+package com.localintercom.app.presentation
+
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.localintercom.app.domain.model.DiscoveredRoom
+import com.localintercom.app.domain.model.RoomConnectionStatus
+import com.localintercom.app.domain.model.RoomMember
+import com.localintercom.app.domain.model.RoomSession
+import com.localintercom.app.domain.model.RoomStatus
+
+@Composable
+fun RoomApp(viewModel: RoomViewModel) {
+    val state by viewModel.state.collectAsStateWithLifecycle()
+    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+        val room = state.activeRoom
+        if (room == null) {
+            RoomSetupScreen(state, viewModel)
+        } else {
+            ActiveRoomScreen(room, state, viewModel::leaveRoom)
+        }
+    }
+}
+
+@Composable
+private fun RoomSetupScreen(state: RoomScreenState, viewModel: RoomViewModel) {
+    Column(
+        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text("Local Intercom", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        Text("Create a room or join a room on your local Wi-Fi network.")
+
+        OutlinedTextField(
+            value = state.displayName,
+            onValueChange = viewModel::onDisplayNameChanged,
+            label = { Text("Your display name") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        Text("Create a room", style = MaterialTheme.typography.titleLarge)
+        OutlinedTextField(
+            value = state.roomName,
+            onValueChange = viewModel::onRoomNameChanged,
+            label = { Text("Room name") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth()
+        )
+        Button(
+            onClick = viewModel::createRoom,
+            enabled = !state.isBusy,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Create room")
+        }
+
+        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text("Rooms nearby", style = MaterialTheme.typography.titleLarge)
+            TextButton(onClick = viewModel::refreshDiscovery, enabled = !state.discoveryState.isScanning) {
+                Text(if (state.discoveryState.isScanning) "Searching…" else "Refresh")
+            }
+        }
+        Text(state.discoveryState.message, style = MaterialTheme.typography.bodySmall)
+        state.discoveredRooms.forEach { room ->
+            DiscoveredRoomCard(
+                room = room,
+                selected = state.selectedRoom?.roomId == room.roomId,
+                onClick = { viewModel.selectRoom(room) }
+            )
+        }
+        if (state.discoveredRooms.isNotEmpty()) {
+            OutlinedTextField(
+                value = state.sessionToken,
+                onValueChange = viewModel::onSessionTokenChanged,
+                label = { Text("Room session token") },
+                visualTransformation = PasswordVisualTransformation(),
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Button(
+                onClick = viewModel::joinSelectedRoom,
+                enabled = !state.isBusy && state.selectedRoom != null && state.selectedRoom.status != RoomStatus.FULL,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Join selected room")
+            }
+        }
+
+        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+        Text("Join by IP address", style = MaterialTheme.typography.titleLarge)
+        Text("Use the host IP, port, and session token shown on the host device.")
+        OutlinedTextField(
+            value = state.manualHostAddress,
+            onValueChange = viewModel::onManualHostChanged,
+            label = { Text("Host IP address") },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
+            modifier = Modifier.fillMaxWidth()
+        )
+        OutlinedTextField(
+            value = state.manualPort,
+            onValueChange = viewModel::onManualPortChanged,
+            label = { Text("Port") },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            modifier = Modifier.fillMaxWidth()
+        )
+        OutlinedTextField(
+            value = state.sessionToken,
+            onValueChange = viewModel::onSessionTokenChanged,
+            label = { Text("Room session token") },
+            visualTransformation = PasswordVisualTransformation(),
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth()
+        )
+        Button(
+            onClick = viewModel::joinManualRoom,
+            enabled = !state.isBusy,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Join using IP")
+        }
+
+        state.message?.let { MessageText(it) }
+        if (state.isBusy) {
+            CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
+        }
+        Spacer(Modifier.height(8.dp))
+    }
+}
+
+@Composable
+private fun DiscoveredRoomCard(room: DiscoveredRoom, selected: Boolean, onClick: () -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        colors = androidx.compose.material3.CardDefaults.cardColors(
+            containerColor = if (selected) MaterialTheme.colorScheme.secondaryContainer
+            else MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(room.roomName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text("Host: ${room.hostName}", style = MaterialTheme.typography.bodyMedium)
+            Text("Members: ${room.memberCount}/${room.maxMembers} · ${room.status.label()}")
+            Text(room.hostAddress.endpoint(room.port), style = MaterialTheme.typography.bodySmall)
+        }
+    }
+}
+
+@Composable
+private fun ActiveRoomScreen(room: RoomSession, state: RoomScreenState, onLeave: () -> Unit) {
+    Column(
+        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text(room.roomName, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        Text("Connection: ${room.connectionStatus.label()}", style = MaterialTheme.typography.titleMedium)
+        Text("Host: ${room.hostName}")
+        Text("Members: ${room.members.size}/6 · ${room.status.label()}")
+        Text("Host address: ${room.hostAddress.endpoint(room.port)}", style = MaterialTheme.typography.bodyMedium)
+        Text(state.discoveryState.message, style = MaterialTheme.typography.bodySmall)
+
+        if (room.isHost) {
+            Text("Share this session token with people joining your room:", style = MaterialTheme.typography.bodyMedium)
+            SelectableToken(room.joinToken.orEmpty())
+        }
+
+        Text("Members", style = MaterialTheme.typography.titleLarge)
+        room.members.forEach { member -> MemberRow(member) }
+
+        state.message?.let { MessageText(it) }
+        Button(onClick = onLeave, enabled = !state.isBusy, modifier = Modifier.fillMaxWidth()) {
+            Text(if (room.isHost) "Leave and close room" else "Leave room")
+        }
+        if (state.isBusy) CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
+    }
+}
+
+@Composable
+private fun SelectableToken(token: String) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        SelectionContainer {
+            Text(
+                text = token,
+                modifier = Modifier.padding(14.dp),
+                style = MaterialTheme.typography.bodyMedium
+            )
+        }
+    }
+}
+
+@Composable
+private fun MemberRow(member: RoomMember) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(14.dp),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(member.displayName, fontWeight = FontWeight.Medium)
+            if (member.isHost) Text("Host", color = MaterialTheme.colorScheme.primary)
+        }
+    }
+}
+
+@Composable
+private fun MessageText(message: String) {
+    Text(message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
+}
+
+private fun RoomStatus.label(): String = when (this) {
+    RoomStatus.OPEN -> "Open"
+    RoomStatus.FULL -> "Full"
+    RoomStatus.CLOSED -> "Closed"
+}
+
+private fun String.endpoint(port: Int): String =
+    if (contains(":")) "[$this]:$port" else "$this:$port"
+
+private fun RoomConnectionStatus.label(): String = when (this) {
+    RoomConnectionStatus.CONNECTING -> "Connecting"
+    RoomConnectionStatus.CONNECTED -> "Connected"
+    RoomConnectionStatus.DISCONNECTED -> "Disconnected"
+}
