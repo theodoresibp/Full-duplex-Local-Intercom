@@ -4,11 +4,13 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.util.Base64
+import com.localintercom.app.data.audio.WebRtcAudioMesh
 import com.localintercom.app.data.discovery.AndroidNsdDataSource
 import com.localintercom.app.data.network.KtorRoomClient
 import com.localintercom.app.data.network.KtorRoomServer
 import com.localintercom.app.domain.model.DiscoveredRoom
 import com.localintercom.app.domain.model.DiscoveryState
+import com.localintercom.app.domain.model.IntercomChannels
 import com.localintercom.app.domain.model.RoomConnectionStatus
 import com.localintercom.app.domain.model.RoomMember
 import com.localintercom.app.domain.model.RoomRules
@@ -30,6 +32,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import org.json.JSONObject
 import java.net.Inet4Address
 import java.security.SecureRandom
 import java.util.UUID
@@ -53,6 +56,7 @@ class KtorRoomRepository(context: Context) : RoomRepository {
     private var discoveryJob: kotlinx.coroutines.Job? = null
     private var server: KtorRoomServer? = null
     private var client: KtorRoomClient? = null
+    private var audioMesh: WebRtcAudioMesh? = null
     @Volatile private var isLeavingHostRoom = false
 
     override suspend fun createRoom(roomName: String, displayName: String) {
@@ -77,9 +81,11 @@ class KtorRoomRepository(context: Context) : RoomRepository {
                 hostMember = hostMember,
                 onMembersChanged = ::onHostMembersChanged
             )
+            var hostClient: KtorRoomClient? = null
             try {
                 val port = withContext(Dispatchers.IO) { roomServer.start() }
-                val room = RoomSession(
+                server = roomServer
+                _activeRoom.value = RoomSession(
                     roomId = roomId,
                     roomName = normalizedRoomName,
                     hostName = normalizedDisplayName,
@@ -88,12 +94,29 @@ class KtorRoomRepository(context: Context) : RoomRepository {
                     connectionStatus = RoomConnectionStatus.CONNECTED,
                     hostAddress = hostAddress,
                     port = port,
-                    joinToken = joinToken
+                    joinToken = joinToken,
+                    localMemberId = hostMember.id
                 )
-                server = roomServer
-                _activeRoom.value = room
+
+                hostClient = createRoomClient()
+                val hostSession = withContext(Dispatchers.IO) {
+                    hostClient.join(
+                        hostAddress = hostAddress,
+                        port = port,
+                        roomId = roomId,
+                        displayName = normalizedDisplayName,
+                        sessionToken = joinToken,
+                        localMemberId = hostMember.id,
+                        isHost = true
+                    )
+                }
+                client = hostClient
+                val session = hostSession.copy(joinToken = joinToken)
+                _activeRoom.value = session
+                startAudioMesh(session, hostClient)
+
                 try {
-                    nsd.publish(room)
+                    nsd.publish(session)
                     _discoveryState.value = DiscoveryState(message = "Room is advertised on the local network.")
                 } catch (error: Throwable) {
                     _discoveryState.value = DiscoveryState(
@@ -101,11 +124,23 @@ class KtorRoomRepository(context: Context) : RoomRepository {
                     )
                 }
             } catch (cancelled: CancellationException) {
+                runCatching { hostClient?.leave() }
+                runCatching { audioMesh?.close() }
+                audioMesh = null
                 runCatching { roomServer.stop() }
+                server = null
+                client = null
+                _activeRoom.value = null
                 throw cancelled
             } catch (error: Throwable) {
+                runCatching { hostClient?.leave() }
+                runCatching { audioMesh?.close() }
+                audioMesh = null
                 runCatching { roomServer.stop() }
-                throw IllegalStateException("Could not start the room server: ${error.message ?: "unknown error"}", error)
+                server = null
+                client = null
+                _activeRoom.value = null
+                throw IllegalStateException("Could not start the room: ${error.message ?: "unknown error"}", error)
             }
         }
     }
@@ -170,19 +205,17 @@ class KtorRoomRepository(context: Context) : RoomRepository {
     ) {
         roomMutex.withLock {
             check(_activeRoom.value == null) { "Leave the current room before joining another one." }
-            val roomClient = KtorRoomClient(
-                scope = scope,
-                onSessionUpdated = { updated -> _activeRoom.value = updated },
-                onDisconnected = {
-                    _activeRoom.update { it?.copy(connectionStatus = RoomConnectionStatus.DISCONNECTED) }
-                }
-            )
+            val roomClient = createRoomClient()
             try {
                 val joinedRoom = withContext(Dispatchers.IO) {
                     roomClient.join(hostAddress, port, roomId, displayName, sessionToken)
                 }
                 client = roomClient
                 _activeRoom.value = joinedRoom
+                startAudioMesh(joinedRoom, roomClient)
+            } catch (cancelled: CancellationException) {
+                runCatching { roomClient.leave() }
+                throw cancelled
             } catch (error: Throwable) {
                 runCatching { roomClient.leave() }
                 throw error
@@ -190,13 +223,63 @@ class KtorRoomRepository(context: Context) : RoomRepository {
         }
     }
 
+    private fun createRoomClient(): KtorRoomClient = KtorRoomClient(
+        scope = scope,
+        onSessionUpdated = { updated ->
+            _activeRoom.update { current ->
+                updated.copy(
+                    joinToken = current?.joinToken ?: updated.joinToken,
+                    selectedChannelId = current?.selectedChannelId ?: updated.selectedChannelId
+                )
+            }
+            audioMesh?.syncMembers(updated.members, updated.selectedChannelId)
+        },
+        onDisconnected = {
+            _activeRoom.update { it?.copy(connectionStatus = RoomConnectionStatus.DISCONNECTED) }
+        },
+        onSignal = { fromMemberId, signalType, data ->
+            audioMesh?.handleSignal(fromMemberId, signalType, data)
+        }
+    )
+
+    private fun startAudioMesh(room: RoomSession, roomClient: KtorRoomClient) {
+        audioMesh?.close()
+        audioMesh = WebRtcAudioMesh(
+            context = appContext,
+            scope = scope,
+            localMemberId = room.localMemberId,
+            sendSignal = { toMemberId, signalType, data ->
+                scope.launch {
+                    runCatching { roomClient.sendSignal(toMemberId, signalType, data) }
+                }
+            },
+            onStatusChanged = { /* surfaced in the room UI in a later presentation update */ }
+        ).also { it.syncMembers(room.members, room.selectedChannelId) }
+    }
+
+    override suspend fun selectChannel(channelId: String) {
+        require(IntercomChannels.contains(channelId)) { "Unknown intercom channel." }
+        val current = _activeRoom.value ?: throw IllegalStateException("Join a room before changing channels.")
+        _activeRoom.value = current.copy(selectedChannelId = channelId)
+        audioMesh?.syncMembers(current.members, channelId)
+        client?.selectChannel(channelId)
+    }
+
+    override fun setPttActive(active: Boolean) {
+        audioMesh?.setPttActive(active)
+    }
+
     override suspend fun leaveRoom() {
         roomMutex.withLock {
             val current = _activeRoom.value
+            audioMesh?.close()
+            audioMesh = null
             if (current?.isHost == true) {
                 isLeavingHostRoom = true
                 try {
                     runCatching { nsd.unpublish() }
+                    client?.leave()
+                    client = null
                     runCatching { server?.stop() }
                     server = null
                 } finally {
@@ -209,7 +292,7 @@ class KtorRoomRepository(context: Context) : RoomRepository {
                 _activeRoom.value = null
             }
             _discoveryState.update {
-                it.copy(isScanning = false, message = "Room closed." )
+                it.copy(isScanning = false, message = "Room closed.")
             }
         }
     }
@@ -223,6 +306,7 @@ class KtorRoomRepository(context: Context) : RoomRepository {
         _activeRoom.update { room ->
             if (room?.isHost == true) room.copy(members = members) else room
         }
+        _activeRoom.value?.let { room -> audioMesh?.syncMembers(room.members, room.selectedChannelId) }
         val updatedRoom = _activeRoom.value ?: return
         if (updatedRoom.isHost && !isLeavingHostRoom) {
             scope.launch {
