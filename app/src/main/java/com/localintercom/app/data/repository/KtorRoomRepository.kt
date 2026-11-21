@@ -66,6 +66,15 @@ class KtorRoomRepository(context: Context) : RoomRepository {
 
     init {
         IntercomAudioService.pttCallback = { active -> audioMesh?.setPttActive(active) }
+        IntercomAudioService.channelStepCallback = ::stepChannel
+    }
+
+    private fun stepChannel(direction: Int) {
+        val current = _activeRoom.value ?: return
+        val channels = IntercomChannels.all
+        val currentIndex = channels.indexOfFirst { it.id == current.selectedChannelId }.coerceAtLeast(0)
+        val nextIndex = (currentIndex + direction + channels.size) % channels.size
+        scope.launch { runCatching { selectChannel(channels[nextIndex].id) } }
     }
 
     override suspend fun createRoom(roomName: String, displayName: String) {
