@@ -293,7 +293,6 @@ class KtorRoomRepository(context: Context) : RoomRepository {
             val current = _activeRoom.value
             audioMesh?.close()
             audioMesh = null
-            IntercomAudioService.pttCallback = null
             IntercomAudioService.stop(appContext)
             if (current?.isHost == true) {
                 isLeavingHostRoom = true
@@ -421,8 +420,16 @@ class KtorRoomRepository(context: Context) : RoomRepository {
             } else {
                 val replacement = awaitReplacementRoom(room, HOST_ELECTION_SLOT_MILLIS)
                 if (replacement != null) {
-                    reconnectAsParticipant(room, replacement)
-                    return
+                    try {
+                        reconnectAsParticipant(room, replacement)
+                        return
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (error: Throwable) {
+                        _discoveryState.value = DiscoveryState(
+                            message = "Found a replacement host but could not rejoin: ${error.message ?: "unknown error"}. Continuing the election…"
+                        )
+                    }
                 }
             }
         }
@@ -530,9 +537,14 @@ class KtorRoomRepository(context: Context) : RoomRepository {
                 _discoveryState.value = DiscoveryState(message = "You are now hosting the recovered room.")
             } catch (error: Throwable) {
                 runCatching { hostClient.leave() }
+                client = null
+                audioMesh?.close()
+                audioMesh = null
+                IntercomAudioService.stop(appContext)
                 runCatching { newServer.stop() }
                 server = null
                 hostControlToken = null
+                _activeRoom.value = room.copy(connectionStatus = RoomConnectionStatus.DISCONNECTED)
                 throw error
             }
         }
