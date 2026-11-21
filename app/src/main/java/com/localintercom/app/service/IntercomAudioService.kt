@@ -37,7 +37,7 @@ class IntercomAudioService : Service() {
         configureAudioFocus()
         configureMediaSession()
         configureCommunicationRoute()
-        audioDeviceCallback = object : AudioDeviceCallback() {
+        val deviceCallback = object : AudioDeviceCallback() {
             override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>) {
                 configureCommunicationRoute()
             }
@@ -46,7 +46,8 @@ class IntercomAudioService : Service() {
                 configureCommunicationRoute()
             }
         }
-        audioManager.registerAudioDeviceCallback(audioDeviceCallback, Handler(Looper.getMainLooper()))
+        audioDeviceCallback = deviceCallback
+        audioManager.registerAudioDeviceCallback(deviceCallback, Handler(Looper.getMainLooper()))
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -93,6 +94,9 @@ class IntercomAudioService : Service() {
             val preferred = devices.firstOrNull {
                 it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
                     it.type == AudioDeviceInfo.TYPE_BLE_HEADSET
+            } ?: devices.firstOrNull {
+                it.type == AudioDeviceInfo.TYPE_WIRED_HEADSET ||
+                    it.type == AudioDeviceInfo.TYPE_USB_HEADSET
             } ?: devices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
             val routed = preferred?.let {
                 runCatching { audioManager.setCommunicationDevice(it) }.getOrDefault(false)
@@ -102,8 +106,13 @@ class IntercomAudioService : Service() {
                 audioManager.isSpeakerphoneOn = true
             }
         } else {
-            val bluetoothAvailable = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
-                .any { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO }
+            val outputs = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+            val bluetoothAvailable = outputs.any { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO }
+            val wiredAvailable = outputs.any {
+                it.type == AudioDeviceInfo.TYPE_WIRED_HEADSET ||
+                    it.type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES ||
+                    it.type == AudioDeviceInfo.TYPE_USB_HEADSET
+            }
             if (bluetoothAvailable) {
                 @Suppress("DEPRECATION")
                 runCatching {
@@ -122,7 +131,7 @@ class IntercomAudioService : Service() {
                     legacyScoStarted = false
                 }
                 @Suppress("DEPRECATION")
-                audioManager.isSpeakerphoneOn = true
+                audioManager.isSpeakerphoneOn = !wiredAvailable
             }
         }
     }
