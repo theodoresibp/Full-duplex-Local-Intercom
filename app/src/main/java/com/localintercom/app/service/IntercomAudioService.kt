@@ -75,12 +75,12 @@ class IntercomAudioService : Service() {
 
     private fun configureCommunicationRoute() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            val devices = audioManager.availableCommunicationDevices
+            val devices = runCatching { audioManager.availableCommunicationDevices }.getOrDefault(emptyList())
             val preferred = devices.firstOrNull {
                 it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
                     it.type == AudioDeviceInfo.TYPE_BLE_HEADSET
             } ?: devices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
-            preferred?.let(audioManager::setCommunicationDevice)
+            runCatching { preferred?.let(audioManager::setCommunicationDevice) }
         } else {
             val bluetoothAvailable = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
                 .any { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO }
