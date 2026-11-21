@@ -2,6 +2,7 @@ package com.localintercom.app.presentation
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.os.Build
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
@@ -58,19 +59,31 @@ fun RoomApp(viewModel: RoomViewModel) {
     val context = LocalContext.current
     var pendingMicrophoneAction by remember { mutableStateOf<(() -> Unit)?>(null) }
     val microphonePermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { results ->
         val action = pendingMicrophoneAction
         pendingMicrophoneAction = null
-        if (granted) action?.invoke()
+        val microphoneGranted = results[Manifest.permission.RECORD_AUDIO] == true ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        if (microphoneGranted) action?.invoke()
         else viewModel.showMessage("Microphone permission is required for intercom audio.")
     }
     val runWithMicrophonePermission: (() -> Unit) -> Unit = { action ->
-        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+        val missingPermissions = buildList {
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                add(Manifest.permission.RECORD_AUDIO)
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+            ) {
+                add(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+        if (missingPermissions.isEmpty()) {
             action()
         } else {
             pendingMicrophoneAction = action
-            microphonePermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            microphonePermissionLauncher.launch(missingPermissions.toTypedArray())
         }
     }
 
