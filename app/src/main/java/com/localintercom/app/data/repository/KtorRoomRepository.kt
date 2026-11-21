@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -59,6 +60,8 @@ class KtorRoomRepository(context: Context) : RoomRepository {
     private var client: KtorRoomClient? = null
     private var audioMesh: WebRtcAudioMesh? = null
     @Volatile private var isLeavingHostRoom = false
+    @Volatile private var isLeavingRoom = false
+    @Volatile private var isRecovering = false
 
     init {
         IntercomAudioService.pttCallback = { active -> audioMesh?.setPttActive(active) }
@@ -240,6 +243,7 @@ class KtorRoomRepository(context: Context) : RoomRepository {
         },
         onDisconnected = {
             _activeRoom.update { it?.copy(connectionStatus = RoomConnectionStatus.DISCONNECTED) }
+            if (!isLeavingRoom) scheduleConnectionRecovery()
         },
         onSignal = { fromMemberId, signalType, data ->
             audioMesh?.handleSignal(fromMemberId, signalType, data)
@@ -277,6 +281,7 @@ class KtorRoomRepository(context: Context) : RoomRepository {
     }
 
     override suspend fun leaveRoom() {
+        isLeavingRoom = true
         roomMutex.withLock {
             val current = _activeRoom.value
             audioMesh?.close()
@@ -294,11 +299,13 @@ class KtorRoomRepository(context: Context) : RoomRepository {
                 } finally {
                     _activeRoom.value = null
                     isLeavingHostRoom = false
+                    isLeavingRoom = false
                 }
             } else {
                 client?.leave()
                 client = null
                 _activeRoom.value = null
+                isLeavingRoom = false
             }
             _discoveryState.update {
                 it.copy(isScanning = false, message = "Room closed.")
@@ -332,6 +339,191 @@ class KtorRoomRepository(context: Context) : RoomRepository {
         }
     }
 
+    private fun scheduleConnectionRecovery() {
+        if (isLeavingRoom || isRecovering) return
+        isRecovering = true
+        scope.launch {
+            try {
+                val room = _activeRoom.value ?: return@launch
+                if (room.isHost) reconnectHostSignaling(room)
+                else recoverAfterHostLoss(room)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                _discoveryState.value = DiscoveryState(
+                    message = "Connection recovery failed: ${error.message ?: "unknown error"}. You can retry joining the room."
+                )
+            } finally {
+                isRecovering = false
+            }
+        }
+    }
+
+    private suspend fun reconnectHostSignaling(room: RoomSession) {
+        roomMutex.withLock {
+            if (isLeavingRoom || _activeRoom.value?.roomId != room.roomId) return
+            runCatching { client?.leave() }
+            val hostClient = createRoomClient()
+            val restored = withContext(Dispatchers.IO) {
+                hostClient.join(
+                    hostAddress = room.hostAddress,
+                    port = room.port,
+                    roomId = room.roomId,
+                    displayName = room.hostName,
+                    sessionToken = room.joinToken.orEmpty(),
+                    localMemberId = room.localMemberId,
+                    isHost = true
+                )
+            }
+            client = hostClient
+            val session = restored.copy(
+                joinToken = room.joinToken,
+                selectedChannelId = room.selectedChannelId
+            )
+            _activeRoom.value = session
+            startAudioMesh(session, hostClient)
+            _discoveryState.value = DiscoveryState(message = "Host signaling connection restored.")
+        }
+    }
+
+    private suspend fun recoverAfterHostLoss(room: RoomSession) {
+        val candidates = room.members
+            .filterNot(RoomMember::isHost)
+            .sortedBy(RoomMember::id)
+        if (candidates.isEmpty()) {
+            _discoveryState.value = DiscoveryState(message = "The host left and no participant is available to take over.")
+            return
+        }
+
+        _discoveryState.value = DiscoveryState(message = "Host connection lost. Electing a new room host…")
+        for (candidate in candidates) {
+            if (isLeavingRoom) return
+            if (candidate.id == room.localMemberId) {
+                try {
+                    promoteToHost(room, candidate)
+                    return
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Throwable) {
+                    _discoveryState.value = DiscoveryState(
+                        message = "Host handover attempt failed: ${error.message ?: "unknown error"}. Trying the next participant…"
+                    )
+                }
+            } else {
+                val replacement = awaitReplacementRoom(room, HOST_ELECTION_SLOT_MILLIS)
+                if (replacement != null) {
+                    reconnectAsParticipant(room, replacement)
+                    return
+                }
+            }
+        }
+        _discoveryState.value = DiscoveryState(
+            message = "No participant could restore the room. Ask someone to create a new room and rejoin."
+        )
+    }
+
+    private suspend fun awaitReplacementRoom(room: RoomSession, timeoutMillis: Long): DiscoveredRoom? {
+        return try {
+            withTimeout(timeoutMillis) {
+                nsd.discover().first { rooms ->
+                    rooms.any {
+                        it.roomId == room.roomId &&
+                            (it.hostAddress != room.hostAddress || it.port != room.port)
+                    }
+                }.firstOrNull {
+                    it.roomId == room.roomId &&
+                        (it.hostAddress != room.hostAddress || it.port != room.port)
+                }
+            }
+        } catch (_: TimeoutCancellationException) {
+            null
+        }
+    }
+
+    private suspend fun reconnectAsParticipant(room: RoomSession, replacement: DiscoveredRoom) {
+        roomMutex.withLock {
+            if (isLeavingRoom || _activeRoom.value?.roomId != room.roomId) return
+            runCatching { client?.leave() }
+            val localMember = room.members.firstOrNull { it.id == room.localMemberId }
+                ?: throw IllegalStateException("Your participant identity is missing from the room snapshot.")
+            val token = room.joinToken ?: throw IllegalStateException("The room session token is unavailable for recovery.")
+            val newClient = createRoomClient()
+            val restored = withContext(Dispatchers.IO) {
+                newClient.join(
+                    hostAddress = replacement.hostAddress,
+                    port = replacement.port,
+                    roomId = room.roomId,
+                    displayName = localMember.displayName,
+                    sessionToken = token,
+                    localMemberId = room.localMemberId,
+                    isHost = false
+                )
+            }
+            client = newClient
+            val session = restored.copy(
+                joinToken = token,
+                selectedChannelId = room.selectedChannelId
+            )
+            _activeRoom.value = session
+            startAudioMesh(session, newClient)
+            _discoveryState.value = DiscoveryState(message = "Reconnected to the replacement room host.")
+        }
+    }
+
+    private suspend fun promoteToHost(room: RoomSession, candidate: RoomMember) {
+        roomMutex.withLock {
+            if (isLeavingRoom || _activeRoom.value?.roomId != room.roomId) return
+            val token = room.joinToken ?: throw IllegalStateException("The room session token is unavailable for host handover.")
+            val hostAddress = findLocalAddress()
+                ?: throw IllegalStateException("Connect to the same Wi-Fi network before taking over the room.")
+            val newHost = candidate.copy(isHost = true)
+            val restoredMembers = listOf(newHost) + room.members.filter {
+                it.id != room.localMemberId && !it.isHost
+            }
+            val newServer = KtorRoomServer(
+                bindAddress = hostAddress,
+                roomId = room.roomId,
+                roomName = room.roomName,
+                hostName = newHost.displayName,
+                sessionToken = token,
+                hostMember = newHost,
+                onMembersChanged = ::onHostMembersChanged,
+                initialMembers = restoredMembers
+            )
+            val port = withContext(Dispatchers.IO) { newServer.start() }
+            server = newServer
+            runCatching { client?.leave() }
+            val hostClient = createRoomClient()
+            try {
+                val restored = withContext(Dispatchers.IO) {
+                    hostClient.join(
+                        hostAddress = hostAddress,
+                        port = port,
+                        roomId = room.roomId,
+                        displayName = newHost.displayName,
+                        sessionToken = token,
+                        localMemberId = newHost.id,
+                        isHost = true
+                    )
+                }
+                client = hostClient
+                val session = restored.copy(
+                    joinToken = token,
+                    selectedChannelId = room.selectedChannelId
+                )
+                _activeRoom.value = session
+                startAudioMesh(session, hostClient)
+                nsd.publish(session)
+                _discoveryState.value = DiscoveryState(message = "You are now hosting the recovered room.")
+            } catch (error: Throwable) {
+                runCatching { hostClient.leave() }
+                runCatching { newServer.stop() }
+                server = null
+                throw error
+            }
+        }
+    }
+
     private fun findLocalAddress(): String? {
         val network = connectivityManager.activeNetwork ?: return null
         val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return null
@@ -352,5 +544,6 @@ class KtorRoomRepository(context: Context) : RoomRepository {
     companion object {
         private const val DISCOVERY_WINDOW_MILLIS = 12_000L
         private const val TOKEN_BYTES = 32
+        private const val HOST_ELECTION_SLOT_MILLIS = 5_000L
     }
 }
