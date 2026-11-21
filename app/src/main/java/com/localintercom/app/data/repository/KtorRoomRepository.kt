@@ -603,6 +603,6 @@ class KtorRoomRepository(context: Context) : RoomRepository {
     companion object {
         private const val DISCOVERY_WINDOW_MILLIS = 12_000L
         private const val TOKEN_BYTES = 32
-        private const val HOST_ELECTION_SLOT_MILLIS = 5_000L
+        private const val HOST_ELECTION_SLOT_MILLIS = 3_000L
     }
 }
