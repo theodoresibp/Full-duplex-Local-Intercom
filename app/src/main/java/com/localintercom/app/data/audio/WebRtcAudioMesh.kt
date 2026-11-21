@@ -5,6 +5,8 @@ import com.localintercom.app.data.network.RoomProtocol
 import com.localintercom.app.domain.model.RoomMember
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -34,7 +36,7 @@ internal class WebRtcAudioMesh(
     context: Context,
     private val scope: CoroutineScope,
     private val localMemberId: String,
-    private val sendSignal: (toMemberId: String, signalType: String, data: JSONObject) -> Unit,
+    private val sendSignal: suspend (toMemberId: String, signalType: String, data: JSONObject) -> Unit,
     private val onStatusChanged: (connectedPeers: Int) -> Unit
 ) {
     private val appContext = context.applicationContext
@@ -44,6 +46,10 @@ internal class WebRtcAudioMesh(
     private val audioDeviceModule: JavaAudioDeviceModule
     private val audioSource: AudioSource
     private val localAudioTrack: AudioTrack
+    private val incomingSignals = Channel<IncomingSignal>(Channel.UNLIMITED)
+    private val outgoingSignals = Channel<OutgoingSignal>(Channel.UNLIMITED)
+    private var incomingWorker: Job? = null
+    private var outgoingWorker: Job? = null
     @Volatile private var selectedChannelId: String = "general"
     @Volatile private var pttActive: Boolean = false
     @Volatile private var closed: Boolean = false
@@ -60,6 +66,18 @@ internal class WebRtcAudioMesh(
         audioSource = factory.createAudioSource(MediaConstraints())
         localAudioTrack = factory.createAudioTrack("local-audio-$localMemberId", audioSource).apply {
             setEnabled(false)
+        }
+        incomingWorker = scope.launch(Dispatchers.IO) {
+            for (signal in incomingSignals) {
+                if (!closed) processSignal(signal)
+            }
+        }
+        outgoingWorker = scope.launch(Dispatchers.IO) {
+            for (signal in outgoingSignals) {
+                if (!closed) {
+                    runCatching { sendSignal(signal.toMemberId, signal.signalType, signal.data) }
+                }
+            }
         }
     }
 
@@ -96,53 +114,61 @@ internal class WebRtcAudioMesh(
 
     fun handleSignal(fromMemberId: String, signalType: String, data: JSONObject) {
         if (closed || fromMemberId == localMemberId) return
-        scope.launch(Dispatchers.IO) {
-            val peer = peers[fromMemberId] ?: return@launch
-            try {
-                when (signalType) {
-                    RoomProtocol.SIGNAL_OFFER -> {
-                        val description = SessionDescription(
-                            SessionDescription.Type.OFFER,
-                            data.optString("sdp")
-                        )
-                        setRemoteDescription(peer.connection, description)
-                        peer.remoteDescriptionSet = true
-                        flushPendingCandidates(peer)
-                        val answer = createAnswer(peer.connection)
-                        setLocalDescription(peer.connection, answer)
-                        sendSignal(
-                            fromMemberId,
-                            RoomProtocol.SIGNAL_ANSWER,
-                            JSONObject().put("sdp", answer.description)
-                        )
-                    }
-                    RoomProtocol.SIGNAL_ANSWER -> {
-                        val description = SessionDescription(
-                            SessionDescription.Type.ANSWER,
-                            data.optString("sdp")
-                        )
-                        setRemoteDescription(peer.connection, description)
-                        peer.remoteDescriptionSet = true
-                        flushPendingCandidates(peer)
-                    }
-                    RoomProtocol.SIGNAL_ICE -> {
-                        val candidateSdp = data.optString("candidate")
-                        if (!HOST_CANDIDATE_PATTERN.containsMatchIn(candidateSdp)) return@launch
-                        val candidate = IceCandidate(
-                            data.optString("sdpMid"),
-                            data.optInt("sdpMLineIndex"),
-                            candidateSdp
-                        )
-                        if (peer.remoteDescriptionSet) peer.connection.addIceCandidate(candidate)
-                        else peer.pendingCandidates += candidate
-                    }
+        incomingSignals.trySend(
+            IncomingSignal(fromMemberId, signalType, JSONObject(data.toString()))
+        )
+    }
+
+    private suspend fun processSignal(signal: IncomingSignal) {
+        val peer = peers[signal.fromMemberId] ?: return
+        try {
+            when (signal.signalType) {
+                RoomProtocol.SIGNAL_OFFER -> {
+                    val description = SessionDescription(
+                        SessionDescription.Type.OFFER,
+                        signal.data.optString("sdp")
+                    )
+                    setRemoteDescription(peer.connection, description)
+                    peer.remoteDescriptionSet = true
+                    flushPendingCandidates(peer)
+                    val answer = createAnswer(peer.connection)
+                    setLocalDescription(peer.connection, answer)
+                    queueSignal(
+                        signal.fromMemberId,
+                        RoomProtocol.SIGNAL_ANSWER,
+                        JSONObject().put("sdp", answer.description)
+                    )
                 }
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (_: Throwable) {
-                // A peer can disappear during negotiation; its next roster snapshot recreates it.
+                RoomProtocol.SIGNAL_ANSWER -> {
+                    val description = SessionDescription(
+                        SessionDescription.Type.ANSWER,
+                        signal.data.optString("sdp")
+                    )
+                    setRemoteDescription(peer.connection, description)
+                    peer.remoteDescriptionSet = true
+                    flushPendingCandidates(peer)
+                }
+                RoomProtocol.SIGNAL_ICE -> {
+                    val candidateSdp = signal.data.optString("candidate")
+                    if (!HOST_CANDIDATE_PATTERN.containsMatchIn(candidateSdp)) return
+                    val candidate = IceCandidate(
+                        signal.data.optString("sdpMid"),
+                        signal.data.optInt("sdpMLineIndex"),
+                        candidateSdp
+                    )
+                    if (peer.remoteDescriptionSet) peer.connection.addIceCandidate(candidate)
+                    else peer.pendingCandidates += candidate
+                }
             }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Throwable) {
+            // A peer can disappear during negotiation; its next roster snapshot recreates it.
         }
+    }
+
+    private fun queueSignal(toMemberId: String, signalType: String, data: JSONObject) {
+        if (!closed) outgoingSignals.trySend(OutgoingSignal(toMemberId, signalType, data))
     }
 
     private fun createPeer(member: RoomMember): Peer {
@@ -167,7 +193,7 @@ internal class WebRtcAudioMesh(
             override fun onIceGatheringChange(newState: PeerConnection.IceGatheringState) = Unit
             override fun onIceCandidate(candidate: IceCandidate) {
                 if (!HOST_CANDIDATE_PATTERN.containsMatchIn(candidate.sdp)) return
-                sendSignal(
+                queueSignal(
                     member.id,
                     RoomProtocol.SIGNAL_ICE,
                     JSONObject()
@@ -207,7 +233,7 @@ internal class WebRtcAudioMesh(
     private suspend fun negotiateOffer(peer: Peer) {
         val offer = createOffer(peer.connection)
         setLocalDescription(peer.connection, offer)
-        sendSignal(
+        queueSignal(
             peer.member.id,
             RoomProtocol.SIGNAL_OFFER,
             JSONObject().put("sdp", offer.description)
@@ -296,6 +322,10 @@ internal class WebRtcAudioMesh(
         closed = true
         pttActive = false
         localAudioTrack.setEnabled(false)
+        incomingSignals.close()
+        outgoingSignals.close()
+        incomingWorker?.cancel()
+        outgoingWorker?.cancel()
         peers.keys.toList().forEach(::removePeer)
         localAudioTrack.dispose()
         audioSource.dispose()
@@ -306,6 +336,18 @@ internal class WebRtcAudioMesh(
     private companion object {
         val HOST_CANDIDATE_PATTERN = Regex("""\btyp\s+host\b""")
     }
+
+    private data class IncomingSignal(
+        val fromMemberId: String,
+        val signalType: String,
+        val data: JSONObject
+    )
+
+    private data class OutgoingSignal(
+        val toMemberId: String,
+        val signalType: String,
+        val data: JSONObject
+    )
 
     private class Peer(
         var member: RoomMember,
