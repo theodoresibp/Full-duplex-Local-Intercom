@@ -194,6 +194,10 @@ internal class KtorRoomServer(
                             rosterMemberId = existingMember.id
                             accepted = true
                             clients[existingMember.id] = socketClient
+                            broadcast(
+                                RoomProtocol.MEMBER_REJOINED,
+                                JSONObject().put("memberId", existingMember.id)
+                            )
                             JoinResult.Accepted
                         }
                     }
