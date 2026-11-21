@@ -25,11 +25,12 @@ Native Android intercom for a private Wi-Fi LAN, designed for up to six particip
 
 ## Not yet implemented or physically validated
 
-- Automatic host election and recovery after the host process/device disappears.
 - QR-code joining, room persistence, account identity, and configurable headset button mappings.
 - Toggle-to-talk fallback for headsets that do not expose reliable press/release events.
-- Physical validation on two through six Android devices, including screen-off operation, Bluetooth reconnect, latency, packet loss, battery, and thermal behavior.
+- Physical validation on two through six Android devices, including host handover, screen-off operation, Bluetooth reconnect, latency, packet loss, battery, and thermal behavior.
 - CI build/test status is not a substitute for real-device audio testing.
+
+A basic deterministic host handover is implemented: clients monitor the host heartbeat, elect participants in stable member-ID order, restore the room roster on the elected device, and reconnect through NSD. This flow is not yet physically validated and depends on local multicast discovery.
 
 The current WebSocket signaling endpoint uses `ws://` on the local network; the session token is therefore not encrypted at the signaling layer. Use only a trusted Wi-Fi network and do not expose the host port to an untrusted network. WebRTC media itself is protected by DTLS-SRTP.
 
