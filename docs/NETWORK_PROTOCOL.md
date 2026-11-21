@@ -19,13 +19,13 @@ Unsupported protocol versions and malformed envelopes are rejected or ignored. F
 
 ## Room events
 
-- `join_request`: `roomId`, `displayName`, and `sessionToken`. Manual-IP joins may send an empty room ID. The host's own local signaling socket additionally sends its pre-existing host `memberId`.
+- `join_request`: `roomId`, `displayName`, and `sessionToken`. Manual-IP joins may send an empty room ID. The host's own local signaling socket additionally sends its pre-existing host `memberId` and a separate private `hostToken` that is never shared with guests. During host handover, existing guests send their previous `memberId` to restore their roster identity.
 - `join_accepted`: assigned `memberId` and the current room snapshot.
 - `join_rejected`: machine-readable `reason` and user-facing `message`.
 - `member_joined` / `member_left`: membership notifications.
 - `room_state`: room ID/name, host name, members, each member's `channelId`, and open/full/closed status.
 - `channel_changed`: authenticated socket requests a new `channelId`; the server accepts only one of the five known channels and broadcasts the updated room snapshot.
-- `heartbeat`: host sends a timestamp every five seconds. It is currently informational; missed-heartbeat detection and host election are not implemented.
+- `heartbeat`: host sends a timestamp every two seconds. Clients declare the host unavailable after 6.5 seconds without room traffic and start deterministic host election.
 - `leave_room`: sent by a client before a normal disconnect.
 
 The five channel IDs are `general`, `team_a`, `team_b`, `security`, and `emergency`.
@@ -59,4 +59,4 @@ The current mesh uses one PeerConnection per remote participant. The peer with t
 - Manual joins still require the session token.
 - WebSocket signaling currently uses cleartext `ws://`; the session token and signaling data can be observed by an attacker with access to the LAN. Use only a trusted, WPA-protected local network and do not expose the port externally.
 - WebRTC media uses DTLS-SRTP encryption.
-- Host election, room epochs, reconnect authorization, and per-channel signaling ACLs are not implemented yet.
+- Host handover restores the room roster using the room session token and previous member IDs. Explicit room epochs, per-member reconnect credentials, and per-channel signaling ACLs are not implemented yet.
