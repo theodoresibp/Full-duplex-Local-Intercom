@@ -105,6 +105,7 @@ internal class KtorRoomClient(
         initialRoom: RoomSession
     ) {
         var room = initialRoom
+        var roomClosedByHost = false
         try {
             while (true) {
                 val frame = withTimeoutOrNull(HEARTBEAT_TIMEOUT_MILLIS) {
@@ -125,7 +126,10 @@ internal class KtorRoomClient(
                             connectionStatus = if (isClosed) RoomConnectionStatus.DISCONNECTED else RoomConnectionStatus.CONNECTED
                         )
                         onSessionUpdated(room)
-                        if (isClosed) break
+                        if (isClosed) {
+                            roomClosedByHost = true
+                            break
+                        }
                     }
                     RoomProtocol.MEMBER_REJOINED -> {
                         val memberId = event.payload.optString("memberId")
@@ -149,7 +153,7 @@ internal class KtorRoomClient(
                 session = null
                 room = room.copy(connectionStatus = RoomConnectionStatus.DISCONNECTED)
                 onSessionUpdated(room)
-                onDisconnected()
+                if (!roomClosedByHost) onDisconnected()
             }
         }
     }
