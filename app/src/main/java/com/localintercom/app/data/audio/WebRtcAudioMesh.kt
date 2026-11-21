@@ -304,7 +304,7 @@ internal class WebRtcAudioMesh(
     }
 
     private companion object {
-        val HOST_CANDIDATE_PATTERN = Regex("""\\btyp\\s+host\\b""")
+        val HOST_CANDIDATE_PATTERN = Regex("""\btyp\s+host\b""")
     }
 
     private class Peer(
