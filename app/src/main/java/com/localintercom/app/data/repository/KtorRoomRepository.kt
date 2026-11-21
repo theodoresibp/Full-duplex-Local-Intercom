@@ -311,9 +311,16 @@ class KtorRoomRepository(context: Context) : RoomRepository {
     override suspend fun selectChannel(channelId: String) {
         require(IntercomChannels.contains(channelId)) { "Unknown intercom channel." }
         val current = _activeRoom.value ?: throw IllegalStateException("Join a room before changing channels.")
+        if (current.selectedChannelId == channelId) return
         _activeRoom.value = current.copy(selectedChannelId = channelId)
         audioMesh?.syncMembers(current.members, channelId)
-        client?.selectChannel(channelId)
+        try {
+            client?.selectChannel(channelId)
+        } catch (error: Throwable) {
+            _activeRoom.value = current
+            audioMesh?.syncMembers(current.members, current.selectedChannelId)
+            throw error
+        }
     }
 
     override fun setPttActive(active: Boolean) {
