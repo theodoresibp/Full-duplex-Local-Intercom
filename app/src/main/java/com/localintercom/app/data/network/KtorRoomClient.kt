@@ -1,5 +1,6 @@
 package com.localintercom.app.data.network
 
+import com.localintercom.app.domain.model.IntercomChannels
 import com.localintercom.app.domain.model.RoomConnectionStatus
 import com.localintercom.app.domain.model.RoomSession
 import com.localintercom.app.domain.model.RoomStatus
@@ -26,7 +27,8 @@ import org.json.JSONObject
 internal class KtorRoomClient(
     private val scope: CoroutineScope,
     private val onSessionUpdated: (RoomSession) -> Unit,
-    private val onDisconnected: () -> Unit
+    private val onDisconnected: () -> Unit,
+    private val onSignal: (fromMemberId: String, signalType: String, data: JSONObject) -> Unit = { _, _, _ -> }
 ) {
     private val httpClient = HttpClient(CIO) {
         install(WebSockets) { maxFrameSize = MAX_MESSAGE_BYTES }
@@ -40,7 +42,9 @@ internal class KtorRoomClient(
         port: Int,
         roomId: String,
         displayName: String,
-        sessionToken: String
+        sessionToken: String,
+        localMemberId: String? = null,
+        isHost: Boolean = false
     ): RoomSession {
         val normalizedAddress = hostAddress.removePrefix("[").removeSuffix("]")
         val urlHost = if (normalizedAddress.contains(':')) "[$normalizedAddress]" else normalizedAddress
@@ -48,7 +52,10 @@ internal class KtorRoomClient(
             httpClient.webSocketSession("ws://$urlHost:$port${RoomProtocol.SERVICE_PATH}")
         }
         try {
-            sendFrame(socket, Frame.Text(RoomProtocol.joinRequest(roomId, displayName, sessionToken).toString()))
+            sendFrame(
+                socket,
+                Frame.Text(RoomProtocol.joinRequest(roomId, displayName, sessionToken, localMemberId).toString())
+            )
             val firstFrame = withTimeout(CONNECTION_TIMEOUT_MILLIS) { socket.incoming.receive() }
             if (firstFrame !is Frame.Text) throw IllegalStateException("The room returned an invalid response.")
             val event = RoomProtocol.parse(firstFrame.readText())
@@ -65,15 +72,19 @@ internal class KtorRoomClient(
             val members = RoomProtocol.parseMembers(room.optJSONArray("members") ?: org.json.JSONArray())
             val actualRoomId = room.optString("roomId").takeIf(String::isNotBlank)
                 ?: throw IllegalStateException("The host returned an invalid room ID.")
+            val acceptedMemberId = event.payload.optString("memberId").takeIf(String::isNotBlank)
+                ?: throw IllegalStateException("The host did not return a participant ID.")
             val joinedRoom = RoomSession(
                 roomId = actualRoomId,
                 roomName = room.optString("roomName", "Intercom room"),
                 hostName = room.optString("hostName", "Host"),
                 members = members,
-                isHost = false,
+                isHost = isHost,
                 connectionStatus = RoomConnectionStatus.CONNECTED,
                 hostAddress = normalizedAddress,
-                port = port
+                port = port,
+                joinToken = sessionToken,
+                localMemberId = acceptedMemberId
             )
             session = socket
             onSessionUpdated(joinedRoom)
@@ -109,17 +120,13 @@ internal class KtorRoomClient(
                         onSessionUpdated(room)
                         if (isClosed) break
                     }
-                    RoomProtocol.HEARTBEAT -> {
-                        sendFrame(
-                            socket,
-                            Frame.Text(
-                                RoomProtocol.createEvent(
-                                    RoomProtocol.HEARTBEAT,
-                                    JSONObject().put("timestamp", System.currentTimeMillis())
-                                ).toString()
-                            )
-                        )
+                    RoomProtocol.SIGNALING -> {
+                        val fromMemberId = event.payload.optString("fromMemberId")
+                        val signalType = event.payload.optString("signalType")
+                        val data = event.payload.optJSONObject("data") ?: continue
+                        if (fromMemberId.isNotBlank()) onSignal(fromMemberId, signalType, data)
                     }
+                    RoomProtocol.HEARTBEAT -> Unit
                 }
             }
         } catch (cancelled: CancellationException) {
@@ -134,6 +141,33 @@ internal class KtorRoomClient(
                 onDisconnected()
             }
         }
+    }
+
+    suspend fun sendSignal(toMemberId: String, signalType: String, data: JSONObject) {
+        require(toMemberId.isNotBlank()) { "A signaling recipient is required." }
+        require(signalType in setOf(RoomProtocol.SIGNAL_OFFER, RoomProtocol.SIGNAL_ANSWER, RoomProtocol.SIGNAL_ICE)) {
+            "Unsupported signaling message."
+        }
+        val socket = session ?: throw IllegalStateException("The room signaling connection is not active.")
+        val payload = JSONObject()
+            .put("toMemberId", toMemberId)
+            .put("signalType", signalType)
+            .put("data", data)
+        sendFrame(socket, Frame.Text(RoomProtocol.createEvent(RoomProtocol.SIGNALING, payload).toString()))
+    }
+
+    suspend fun selectChannel(channelId: String) {
+        require(IntercomChannels.contains(channelId)) { "Unknown intercom channel." }
+        val socket = session ?: throw IllegalStateException("The room signaling connection is not active.")
+        sendFrame(
+            socket,
+            Frame.Text(
+                RoomProtocol.createEvent(
+                    RoomProtocol.CHANNEL_CHANGED,
+                    JSONObject().put("channelId", channelId)
+                ).toString()
+            )
+        )
     }
 
     private suspend fun sendFrame(socket: DefaultClientWebSocketSession, frame: Frame) {
