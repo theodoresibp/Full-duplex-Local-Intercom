@@ -12,6 +12,7 @@
     <application
         android:name=".IntercomApplication"
         android:allowBackup="true"
+        android:usesCleartextTraffic="true"
         android:label="Local Intercom"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
