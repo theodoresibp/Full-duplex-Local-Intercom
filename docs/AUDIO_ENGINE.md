@@ -24,7 +24,7 @@ This is receiver-side isolation, not cryptographic per-channel access control: a
 
 ## Bluetooth and routing
 
-The microphone foreground service uses Android AudioManager communication routing. It prefers a connected Bluetooth SCO/BLE communication device and falls back to the built-in speaker. Android MediaSession handles headset media-button down/up events for PTT when the headset exposes them.
+The microphone foreground service uses Android AudioManager communication routing. It prefers a connected Bluetooth SCO/BLE communication device and falls back to the built-in speaker. Android MediaSession handles headset media-button down/up events for PTT when the headset exposes them. Media next/previous buttons cycle through the five channels when the headset sends those key events.
 
 Headset implementations vary. Some emit reliable press/release events; others only emit a click or map a button to a media action. Toggle-to-talk fallback and configurable button mappings are not implemented yet.
 
