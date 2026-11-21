@@ -19,6 +19,8 @@ interface RoomRepository {
         displayName: String,
         sessionToken: String
     )
+    suspend fun selectChannel(channelId: String)
+    fun setPttActive(active: Boolean)
     suspend fun leaveRoom()
     fun releaseWhenUiCloses()
 }
