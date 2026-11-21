@@ -8,14 +8,23 @@ data class RoomRosterChange(
     val members: List<RoomMember>
 )
 
-class RoomRoster(hostMember: RoomMember) {
+class RoomRoster(
+    hostMember: RoomMember,
+    initialMembers: List<RoomMember> = listOf(hostMember)
+) {
     private val mutex = Mutex()
-    private val members = mutableListOf(hostMember)
+    private val members = initialMembers.toMutableList()
 
     init {
         require(hostMember.isHost) { "The initial room member must be the host." }
         require(hostMember.id.isNotBlank()) { "The host must have a member ID." }
-        require(IntercomChannels.contains(hostMember.channelId)) { "The host channel is invalid." }
+        require(initialMembers.firstOrNull()?.id == hostMember.id) { "The host must be the first roster member." }
+        require(initialMembers.size in 1..RoomRules.MAX_MEMBERS) { "The initial roster exceeds room capacity." }
+        require(initialMembers.count { it.isHost } == 1) { "A room must have exactly one host." }
+        require(initialMembers.map(RoomMember::id).distinct().size == initialMembers.size) { "Room member IDs must be unique." }
+        require(initialMembers.all { it.id.isNotBlank() && IntercomChannels.contains(it.channelId) }) {
+            "Every initial room member must have a valid ID and channel."
+        }
     }
 
     suspend fun tryAdd(member: RoomMember): RoomRosterChange? = mutex.withLock {
