@@ -1,5 +1,6 @@
 package com.localintercom.app.data.network
 
+import com.localintercom.app.domain.model.IntercomChannels
 import com.localintercom.app.domain.model.RoomMember
 import com.localintercom.app.domain.model.RoomRoster
 import com.localintercom.app.domain.model.RoomRules
@@ -50,6 +51,7 @@ internal class KtorRoomServer(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val roomEventsMutex = Mutex()
     private val roster = RoomRoster(hostMember)
+    private val hostMemberId = hostMember.id
     private val clients = ConcurrentHashMap<String, ClientSocket>()
     private var server: EmbeddedServer<*, *>? = null
     private var heartbeatJob: Job? = null
@@ -134,9 +136,32 @@ internal class KtorRoomServer(
                 return
             }
 
+            val requestedMemberId = request.payload.optString("memberId")
             val joinResult = roomEventsMutex.withLock {
                 if (closed) {
                     JoinResult.Rejected("room_closed", "The host has closed this room.")
+                } else if (requestedMemberId == hostMemberId) {
+                    if (clients.containsKey(hostMemberId)) {
+                        JoinResult.Rejected("host_already_connected", "The host signaling connection is already active.")
+                    } else {
+                        val snapshot = roster.snapshot()
+                        val socketClient = ClientSocket(socket)
+                        val acceptedPayload = JSONObject()
+                            .put("memberId", hostMemberId)
+                            .put("room", roomStatePayload(snapshot, roomStatus(snapshot)))
+                        val acceptedFrame = RoomProtocol.createEvent(
+                            RoomProtocol.JOIN_ACCEPTED,
+                            acceptedPayload,
+                            request.requestId
+                        ).toString()
+                        if (!socketClient.sendSafely(acceptedFrame)) {
+                            throw IOException("Could not deliver the host signaling response.")
+                        }
+                        rosterMemberId = hostMemberId
+                        accepted = true
+                        clients[hostMemberId] = socketClient
+                        JoinResult.Accepted
+                    }
                 } else {
                     val member = RoomMember(UUID.randomUUID().toString(), displayName, isHost = false)
                     val change = roster.tryAdd(member)
@@ -147,10 +172,7 @@ internal class KtorRoomServer(
                         val socketClient = ClientSocket(socket)
                         val acceptedPayload = JSONObject()
                             .put("memberId", member.id)
-                            .put(
-                                "room",
-                                roomStatePayload(change.members, roomStatus(change.members))
-                            )
+                            .put("room", roomStatePayload(change.members, roomStatus(change.members)))
                         val acceptedFrame = RoomProtocol.createEvent(
                             RoomProtocol.JOIN_ACCEPTED,
                             acceptedPayload,
@@ -175,7 +197,7 @@ internal class KtorRoomServer(
 
             when (joinResult) {
                 is JoinResult.Rejected -> reject(socket, joinResult.reason, joinResult.message)
-                JoinResult.Accepted -> readClientEvents(socket)
+                JoinResult.Accepted -> readClientEvents(socket, rosterMemberId ?: return)
             }
         } catch (cancelled: CancellationException) {
             throw cancelled
@@ -186,13 +208,21 @@ internal class KtorRoomServer(
         }
     }
 
-    private suspend fun readClientEvents(socket: DefaultWebSocketServerSession) {
+    private suspend fun readClientEvents(socket: DefaultWebSocketServerSession, memberId: String) {
         for (frame in socket.incoming) {
             if (frame !is Frame.Text) continue
             val event = runCatching { RoomProtocol.parse(frame.readText()) }.getOrNull() ?: continue
             when (event.name) {
                 RoomProtocol.LEAVE_ROOM -> return
                 RoomProtocol.HEARTBEAT -> Unit
+                RoomProtocol.CHANNEL_CHANGED -> {
+                    val channelId = event.payload.optString("channelId")
+                    if (!IntercomChannels.contains(channelId)) continue
+                    val change = roster.updateChannel(memberId, channelId) ?: continue
+                    broadcastRoomState(change.members)
+                    onMembersChanged(change.members)
+                }
+                RoomProtocol.SIGNALING -> routeSignaling(memberId, event.payload)
             }
         }
     }
@@ -209,8 +239,8 @@ internal class KtorRoomServer(
 
     private suspend fun removeMember(memberId: String, announce: Boolean) {
         roomEventsMutex.withLock {
-            val change = roster.remove(memberId) ?: return
             clients.remove(memberId)
+            val change = roster.remove(memberId) ?: return
             if (closed || !announce) return
 
             broadcast(
@@ -220,6 +250,20 @@ internal class KtorRoomServer(
             broadcastRoomState(change.members)
             onMembersChanged(change.members)
         }
+    }
+
+    private suspend fun routeSignaling(senderId: String, payload: JSONObject) {
+        val targetId = payload.optString("toMemberId")
+        val signalType = payload.optString("signalType")
+        val data = payload.optJSONObject("data") ?: return
+        if (targetId.isBlank() || targetId == senderId) return
+        if (signalType !in setOf(RoomProtocol.SIGNAL_OFFER, RoomProtocol.SIGNAL_ANSWER, RoomProtocol.SIGNAL_ICE)) return
+        val target = clients[targetId] ?: return
+        val forwarded = JSONObject()
+            .put("fromMemberId", senderId)
+            .put("signalType", signalType)
+            .put("data", data)
+        target.sendSafely(RoomProtocol.createEvent(RoomProtocol.SIGNALING, forwarded).toString())
     }
 
     private fun roomStatus(snapshot: List<RoomMember>): RoomStatus =
