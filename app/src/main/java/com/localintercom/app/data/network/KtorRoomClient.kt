@@ -30,7 +30,8 @@ internal class KtorRoomClient(
     private val scope: CoroutineScope,
     private val onSessionUpdated: (RoomSession) -> Unit,
     private val onDisconnected: () -> Unit,
-    private val onSignal: (fromMemberId: String, signalType: String, data: JSONObject) -> Unit = { _, _, _ -> }
+    private val onSignal: (fromMemberId: String, signalType: String, data: JSONObject) -> Unit = { _, _, _ -> },
+    private val onMemberRejoined: (memberId: String) -> Unit = { }
 ) {
     private val httpClient = HttpClient(CIO) {
         install(WebSockets) { maxFrameSize = MAX_MESSAGE_BYTES }
@@ -125,6 +126,10 @@ internal class KtorRoomClient(
                         )
                         onSessionUpdated(room)
                         if (isClosed) break
+                    }
+                    RoomProtocol.MEMBER_REJOINED -> {
+                        val memberId = event.payload.optString("memberId")
+                        if (memberId.isNotBlank()) onMemberRejoined(memberId)
                     }
                     RoomProtocol.SIGNALING -> {
                         val fromMemberId = event.payload.optString("fromMemberId")
