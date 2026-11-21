@@ -23,11 +23,11 @@ The host manages membership, channel state and signaling but does not mix or rel
 ## Host lifecycle
 
 1. Any participant may create a room and become coordinator.
-2. Coordinator emits a versioned room snapshot and periodic heartbeat (initial design: every 2 seconds).
-3. Peers consider the coordinator unavailable after a missed-heartbeat threshold (initial design: 6 seconds, to be tuned).
-4. Eligible peers run deterministic election using the last committed room epoch and a stable candidate ordering.
-5. The elected peer starts the embedded server, increments the room epoch and publishes the recovered snapshot.
-6. Peers reconnect signaling and renegotiate media as needed.
+2. The current Milestone 1 server broadcasts a versioned room snapshot and heartbeat every 5 seconds. Heartbeats are currently informational; missed-heartbeat detection and host election are not implemented.
+3. Planned recovery design: peers consider the coordinator unavailable after a configurable missed-heartbeat threshold (initial target: 6 seconds, to be tuned against the heartbeat interval).
+4. Eligible peers will run deterministic election using the last committed room epoch and a stable candidate ordering.
+5. The elected peer will start the embedded server, increment the room epoch and publish the recovered snapshot.
+6. Peers will reconnect signaling and renegotiate media as needed.
 
 This is a recovery mechanism, not seamless zero-interruption failover. Existing direct media paths may survive briefly, but channel/membership coordination pauses during election. Target recovery under 10 seconds is a test goal.
 
