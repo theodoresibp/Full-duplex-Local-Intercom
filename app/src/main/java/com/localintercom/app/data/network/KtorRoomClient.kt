@@ -46,7 +46,8 @@ internal class KtorRoomClient(
         displayName: String,
         sessionToken: String,
         localMemberId: String? = null,
-        isHost: Boolean = false
+        isHost: Boolean = false,
+        hostControlToken: String? = null
     ): RoomSession {
         val normalizedAddress = hostAddress.removePrefix("[").removeSuffix("]")
         val urlHost = if (normalizedAddress.contains(':')) "[$normalizedAddress]" else normalizedAddress
@@ -56,7 +57,7 @@ internal class KtorRoomClient(
         try {
             sendFrame(
                 socket,
-                Frame.Text(RoomProtocol.joinRequest(roomId, displayName, sessionToken, localMemberId).toString())
+                Frame.Text(RoomProtocol.joinRequest(roomId, displayName, sessionToken, localMemberId, hostControlToken).toString())
             )
             val firstFrame = withTimeout(CONNECTION_TIMEOUT_MILLIS) { socket.incoming.receive() }
             if (firstFrame !is Frame.Text) throw IllegalStateException("The room returned an invalid response.")
