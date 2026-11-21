@@ -297,9 +297,7 @@ class KtorRoomRepository(context: Context) : RoomRepository {
             scope = scope,
             localMemberId = room.localMemberId,
             sendSignal = { toMemberId, signalType, data ->
-                scope.launch {
-                    runCatching { roomClient.sendSignal(toMemberId, signalType, data) }
-                }
+                roomClient.sendSignal(toMemberId, signalType, data)
             },
             onStatusChanged = { /* surfaced in the room UI in a later presentation update */ }
         )
