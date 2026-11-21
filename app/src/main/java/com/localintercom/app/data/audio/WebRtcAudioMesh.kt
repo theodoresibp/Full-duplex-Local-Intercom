@@ -124,8 +124,8 @@ internal class WebRtcAudioMesh(
                         else peer.pendingCandidates += candidate
                     }
                 }
-            } catch (_: CancellationException) {
-                throw
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (_: Throwable) {
                 // A peer can disappear during negotiation; its next roster snapshot recreates it.
             }
