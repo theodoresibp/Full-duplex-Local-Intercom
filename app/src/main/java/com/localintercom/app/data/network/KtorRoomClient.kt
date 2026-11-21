@@ -22,6 +22,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
+import java.io.IOException
 import org.json.JSONObject
 
 internal class KtorRoomClient(
@@ -102,7 +104,10 @@ internal class KtorRoomClient(
     ) {
         var room = initialRoom
         try {
-            for (frame in socket.incoming) {
+            while (true) {
+                val frame = withTimeoutOrNull(HEARTBEAT_TIMEOUT_MILLIS) {
+                    socket.incoming.receive()
+                } ?: throw IOException("The room host heartbeat timed out.")
                 if (frame !is Frame.Text) continue
                 val event = runCatching { RoomProtocol.parse(frame.readText()) }.getOrNull() ?: continue
                 when (event.name) {
@@ -195,5 +200,6 @@ internal class KtorRoomClient(
     companion object {
         private const val CONNECTION_TIMEOUT_MILLIS = 10_000L
         private const val MAX_MESSAGE_BYTES = 8_192L
+        private const val HEARTBEAT_TIMEOUT_MILLIS = 6_500L
     }
 }
