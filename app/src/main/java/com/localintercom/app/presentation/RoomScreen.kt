@@ -1,6 +1,12 @@
 package com.localintercom.app.presentation
 
+import android.Manifest
+import android.content.pm.PackageManager
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -17,21 +23,30 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.localintercom.app.domain.model.DiscoveredRoom
+import com.localintercom.app.domain.model.IntercomChannels
 import com.localintercom.app.domain.model.RoomConnectionStatus
 import com.localintercom.app.domain.model.RoomMember
 import com.localintercom.app.domain.model.RoomSession
@@ -40,18 +55,49 @@ import com.localintercom.app.domain.model.RoomStatus
 @Composable
 fun RoomApp(viewModel: RoomViewModel) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    var pendingMicrophoneAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+    val microphonePermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        val action = pendingMicrophoneAction
+        pendingMicrophoneAction = null
+        if (granted) action?.invoke()
+        else viewModel.showMessage("Microphone permission is required for intercom audio.")
+    }
+    val runWithMicrophonePermission: (() -> Unit) -> Unit = { action ->
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+            action()
+        } else {
+            pendingMicrophoneAction = action
+            microphonePermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        }
+    }
+
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         val room = state.activeRoom
         if (room == null) {
-            RoomSetupScreen(state, viewModel)
+            RoomSetupScreen(
+                state = state,
+                viewModel = viewModel,
+                onCreateRoom = { runWithMicrophonePermission(viewModel::createRoom) },
+                onJoinSelectedRoom = { runWithMicrophonePermission(viewModel::joinSelectedRoom) },
+                onJoinManualRoom = { runWithMicrophonePermission(viewModel::joinManualRoom) }
+            )
         } else {
-            ActiveRoomScreen(room, state, viewModel::leaveRoom)
+            ActiveRoomScreen(room, state, viewModel)
         }
     }
 }
 
 @Composable
-private fun RoomSetupScreen(state: RoomScreenState, viewModel: RoomViewModel) {
+private fun RoomSetupScreen(
+    state: RoomScreenState,
+    viewModel: RoomViewModel,
+    onCreateRoom: () -> Unit,
+    onJoinSelectedRoom: () -> Unit,
+    onJoinManualRoom: () -> Unit
+) {
     Column(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -76,7 +122,7 @@ private fun RoomSetupScreen(state: RoomScreenState, viewModel: RoomViewModel) {
             modifier = Modifier.fillMaxWidth()
         )
         Button(
-            onClick = viewModel::createRoom,
+            onClick = onCreateRoom,
             enabled = !state.isBusy,
             modifier = Modifier.fillMaxWidth()
         ) {
@@ -112,7 +158,7 @@ private fun RoomSetupScreen(state: RoomScreenState, viewModel: RoomViewModel) {
                 modifier = Modifier.fillMaxWidth()
             )
             Button(
-                onClick = viewModel::joinSelectedRoom,
+                onClick = onJoinSelectedRoom,
                 enabled = !state.isBusy && state.selectedRoom != null && state.selectedRoom.status != RoomStatus.FULL,
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -148,7 +194,7 @@ private fun RoomSetupScreen(state: RoomScreenState, viewModel: RoomViewModel) {
             modifier = Modifier.fillMaxWidth()
         )
         Button(
-            onClick = viewModel::joinManualRoom,
+            onClick = onJoinManualRoom,
             enabled = !state.isBusy,
             modifier = Modifier.fillMaxWidth()
         ) {
@@ -182,7 +228,7 @@ private fun DiscoveredRoomCard(room: DiscoveredRoom, selected: Boolean, onClick:
 }
 
 @Composable
-private fun ActiveRoomScreen(room: RoomSession, state: RoomScreenState, onLeave: () -> Unit) {
+private fun ActiveRoomScreen(room: RoomSession, state: RoomScreenState, viewModel: RoomViewModel) {
     Column(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -199,11 +245,53 @@ private fun ActiveRoomScreen(room: RoomSession, state: RoomScreenState, onLeave:
             SelectableToken(room.joinToken.orEmpty())
         }
 
+        Text("Channel", style = MaterialTheme.typography.titleLarge)
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            IntercomChannels.all.forEach { channel ->
+                FilterChip(
+                    selected = room.selectedChannelId == channel.id,
+                    onClick = { viewModel.selectChannel(channel.id) },
+                    label = { Text(channel.name) }
+                )
+            }
+        }
+        Text("Hold the button to transmit on ${IntercomChannels.all.firstOrNull { it.id == room.selectedChannelId }?.name ?: "General"}. Release to mute.")
+
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(104.dp)
+                .pointerInput(room.localMemberId) {
+                    detectTapGestures(onPress = {
+                        viewModel.setPttActive(true)
+                        try {
+                            tryAwaitRelease()
+                        } finally {
+                            viewModel.setPttActive(false)
+                        }
+                    })
+                },
+            shape = RoundedCornerShape(18.dp),
+            color = MaterialTheme.colorScheme.primaryContainer
+        ) {
+            androidx.compose.foundation.layout.Box(contentAlignment = Alignment.Center) {
+                Text(
+                    "HOLD TO TALK",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+            }
+        }
+
         Text("Members", style = MaterialTheme.typography.titleLarge)
         room.members.forEach { member -> MemberRow(member) }
 
         state.message?.let { MessageText(it) }
-        Button(onClick = onLeave, enabled = !state.isBusy, modifier = Modifier.fillMaxWidth()) {
+        Button(onClick = viewModel::leaveRoom, enabled = !state.isBusy, modifier = Modifier.fillMaxWidth()) {
             Text(if (room.isHost) "Leave and close room" else "Leave room")
         }
         if (state.isBusy) CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
@@ -230,7 +318,13 @@ private fun MemberRow(member: RoomMember) {
             modifier = Modifier.fillMaxWidth().padding(14.dp),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Text(member.displayName, fontWeight = FontWeight.Medium)
+            Column {
+                Text(member.displayName, fontWeight = FontWeight.Medium)
+                Text(
+                    IntercomChannels.all.firstOrNull { it.id == member.channelId }?.name ?: "General",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
             if (member.isHost) Text("Host", color = MaterialTheme.colorScheme.primary)
         }
     }
