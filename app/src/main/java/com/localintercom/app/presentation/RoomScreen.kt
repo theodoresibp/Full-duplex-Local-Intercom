@@ -78,6 +78,11 @@ fun RoomApp(viewModel: RoomViewModel) {
             ) {
                 add(Manifest.permission.POST_NOTIFICATIONS)
             }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED
+            ) {
+                add(Manifest.permission.BLUETOOTH_CONNECT)
+            }
         }
         if (missingPermissions.isEmpty()) {
             action()
