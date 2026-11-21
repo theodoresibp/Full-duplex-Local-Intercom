@@ -24,11 +24,13 @@ The host manages membership, channel state, and signaling but does not mix or re
 ## Host lifecycle
 
 1. Any participant may create a room and become coordinator.
-2. The current server broadcasts a versioned room snapshot and heartbeat every five seconds.
-3. Heartbeats are currently informational. Missed-heartbeat detection, deterministic host election, room epochs, and automatic host recovery are not implemented.
-4. If the host process disappears, current peers are marked disconnected; they must rejoin a room manually after a new host creates one.
+2. The server broadcasts a versioned room snapshot and heartbeat every two seconds.
+3. Clients mark the host unavailable after 6.5 seconds without incoming room traffic.
+4. Participants are ordered by stable member ID. The first available candidate starts a new host server with a restored roster; later candidates wait for the new room advertisement before attempting promotion.
+5. The new host increments no explicit room epoch yet; peers rejoin through NSD using their previous member IDs and the room session token.
+6. The host also opens a private local signaling socket using a separate host-only credential.
 
-This is not seamless failover. Host recovery under 10 seconds remains a future target, not an implemented guarantee.
+This is a best-effort handover, not seamless failover. It depends on multicast discovery and has not yet been tested on physical devices; recovery under 10 seconds is a target, not a guarantee.
 
 ## Android lifecycle and permissions
 
