@@ -126,10 +126,12 @@ internal class WebRtcAudioMesh(
                         flushPendingCandidates(peer)
                     }
                     RoomProtocol.SIGNAL_ICE -> {
+                        val candidateSdp = data.optString("candidate")
+                        if (!HOST_CANDIDATE_PATTERN.containsMatchIn(candidateSdp)) return@launch
                         val candidate = IceCandidate(
                             data.optString("sdpMid"),
                             data.optInt("sdpMLineIndex"),
-                            data.optString("candidate")
+                            candidateSdp
                         )
                         if (peer.remoteDescriptionSet) peer.connection.addIceCandidate(candidate)
                         else peer.pendingCandidates += candidate
@@ -164,6 +166,7 @@ internal class WebRtcAudioMesh(
             override fun onIceConnectionReceivingChange(receiving: Boolean) = Unit
             override fun onIceGatheringChange(newState: PeerConnection.IceGatheringState) = Unit
             override fun onIceCandidate(candidate: IceCandidate) {
+                if (!HOST_CANDIDATE_PATTERN.containsMatchIn(candidate.sdp)) return
                 sendSignal(
                     member.id,
                     RoomProtocol.SIGNAL_ICE,
@@ -298,6 +301,10 @@ internal class WebRtcAudioMesh(
         audioSource.dispose()
         factory.dispose()
         audioDeviceModule.release()
+    }
+
+    private companion object {
+        val HOST_CANDIDATE_PATTERN = Regex("""\\btyp\\s+host\\b""")
     }
 
     private class Peer(
