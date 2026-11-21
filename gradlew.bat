@@ -10,7 +10,7 @@ set "GRADLE_BIN=%GRADLE_HOME%\bin\gradle.bat"
 if not exist "%GRADLE_BIN%" (
   if not exist "%INSTALL_DIR%" mkdir "%INSTALL_DIR%"
   powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $archive=Join-Path '%INSTALL_DIR%' 'gradle-%GRADLE_VERSION%-bin.zip'; Invoke-WebRequest -Uri 'https://services.gradle.org/distributions/gradle-%GRADLE_VERSION%-bin.zip' -OutFile $archive; Expand-Archive -Path $archive -DestinationPath '%INSTALL_DIR%' -Force; Remove-Item $archive"
-  if errorlevel 1 exit /b %errorlevel%
+  if errorlevel 1 exit /b 1
 )
 
 call "%GRADLE_BIN%" %*
