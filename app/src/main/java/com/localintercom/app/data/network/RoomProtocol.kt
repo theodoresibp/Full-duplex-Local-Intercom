@@ -39,13 +39,15 @@ internal object RoomProtocol {
         roomId: String,
         displayName: String,
         sessionToken: String,
-        memberId: String? = null
+        memberId: String? = null,
+        hostToken: String? = null
     ): JSONObject {
         val payload = JSONObject()
             .put("roomId", roomId)
             .put("displayName", displayName)
             .put("sessionToken", sessionToken)
         if (!memberId.isNullOrBlank()) payload.put("memberId", memberId)
+        if (!hostToken.isNullOrBlank()) payload.put("hostToken", hostToken)
         return createEvent(JOIN_REQUEST, payload)
     }
 
