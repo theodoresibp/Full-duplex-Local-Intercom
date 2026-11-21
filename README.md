@@ -20,7 +20,7 @@ Native Android intercom for a private Wi-Fi LAN, designed for up to six particip
 - Channel selection is shared through room state; remote tracks outside the selected channel are muted locally.
 - Hold-to-talk gates the local microphone track. Multiple participants can talk simultaneously.
 - Microphone foreground service keeps the active session alive while the screen is off.
-- Android MediaSession handles supported Bluetooth headset media-button press/release events as PTT.
+- Android MediaSession handles supported Bluetooth headset media-button press/release events as PTT; media next/previous keys cycle through channels.
 - Audio routing prefers a connected Bluetooth communication headset and falls back to the phone speaker.
 
 ## Not yet implemented or physically validated
