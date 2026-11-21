@@ -1,9 +1,0 @@
-com.localintercom.app-pngs-0 D:\Theo\Personal Project\Full-duplex-Local-Intercom\app\build\generated\res\pngs\debug
-com.localintercom.app-resValues-1 D:\Theo\Personal Project\Full-duplex-Local-Intercom\app\build\generated\res\resValues\debug
-com.localintercom.app-updated_navigation_xml-2 D:\Theo\Personal Project\Full-duplex-Local-Intercom\app\build\generated\updated_navigation_xml\debug
-com.localintercom.app-packageDebugResources-3 D:\Theo\Personal Project\Full-duplex-Local-Intercom\app\build\intermediates\incremental\debug\packageDebugResources\merged.dir
-com.localintercom.app-packageDebugResources-4 D:\Theo\Personal Project\Full-duplex-Local-Intercom\app\build\intermediates\incremental\debug\packageDebugResources\stripped.dir
-com.localintercom.app-debug-5 D:\Theo\Personal Project\Full-duplex-Local-Intercom\app\build\intermediates\merged_res\debug\mergeDebugResources
-com.localintercom.app-debug-6 D:\Theo\Personal Project\Full-duplex-Local-Intercom\app\src\debug\res
-com.localintercom.app-main-7 D:\Theo\Personal Project\Full-duplex-Local-Intercom\app\src\main\res
-gradleHome-0 C:\Users\Theo\.gradle
