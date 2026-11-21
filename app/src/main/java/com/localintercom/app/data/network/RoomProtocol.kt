@@ -16,6 +16,7 @@ internal object RoomProtocol {
     const val JOIN_REJECTED = "join_rejected"
     const val MEMBER_JOINED = "member_joined"
     const val MEMBER_LEFT = "member_left"
+    const val MEMBER_REJOINED = "member_rejoined"
     const val ROOM_STATE = "room_state"
     const val HEARTBEAT = "heartbeat"
     const val LEAVE_ROOM = "leave_room"
