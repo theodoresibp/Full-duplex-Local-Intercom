@@ -114,6 +114,16 @@ class IntercomAudioService : Service() {
                         mediaButtonIntent.getParcelableExtra(Intent.EXTRA_KEY_EVENT)
                     } ?: return false
 
+                    if (event.keyCode == KeyEvent.KEYCODE_MEDIA_NEXT ||
+                        event.keyCode == KeyEvent.KEYCODE_MEDIA_PREVIOUS
+                    ) {
+                        if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
+                            channelStepCallback?.invoke(
+                                if (event.keyCode == KeyEvent.KEYCODE_MEDIA_NEXT) 1 else -1
+                            )
+                        }
+                        return true
+                    }
                     if (event.keyCode !in SUPPORTED_PTT_KEYS) return super.onMediaButtonEvent(mediaButtonIntent)
                     when (event.action) {
                         KeyEvent.ACTION_DOWN -> {
@@ -128,6 +138,18 @@ class IntercomAudioService : Service() {
                         }
                     }
                     return true
+                }
+
+                override fun onPlay() {
+                    pttCallback?.invoke(true)
+                }
+
+                override fun onPause() {
+                    pttCallback?.invoke(false)
+                }
+
+                override fun onStop() {
+                    pttCallback?.invoke(false)
                 }
             })
             isActive = true
@@ -205,11 +227,15 @@ class IntercomAudioService : Service() {
         private val SUPPORTED_PTT_KEYS = setOf(
             KeyEvent.KEYCODE_HEADSETHOOK,
             KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
-            KeyEvent.KEYCODE_MEDIA_PLAY
+            KeyEvent.KEYCODE_MEDIA_PLAY,
+            KeyEvent.KEYCODE_MEDIA_PAUSE
         )
 
         @Volatile
         var pttCallback: ((Boolean) -> Unit)? = null
+
+        @Volatile
+        var channelStepCallback: ((Int) -> Unit)? = null
 
         fun start(context: Context) {
             val intent = Intent(context, IntercomAudioService::class.java).setAction(ACTION_START)
