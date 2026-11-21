@@ -13,7 +13,7 @@ Native Android application for a private Wi-Fi LAN. A room has at most six parti
 - **Background:** microphone foreground service with persistent notification; Android MediaSession receives supported Bluetooth media-button events.
 - **Audio routing:** AudioManager communication mode, Bluetooth headset preference, and speaker fallback.
 
-Room database persistence, DataStore preferences, QR join, and host election are planned but not implemented.
+Room database persistence, DataStore preferences, QR join, explicit room epochs, and per-member reconnect credentials are planned. Basic deterministic host handover is implemented but awaits physical-device validation.
 
 ## Audio topology
 
