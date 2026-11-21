@@ -59,6 +59,7 @@ class KtorRoomRepository(context: Context) : RoomRepository {
     private var server: KtorRoomServer? = null
     private var client: KtorRoomClient? = null
     private var audioMesh: WebRtcAudioMesh? = null
+    private var hostControlToken: String? = null
     @Volatile private var isLeavingHostRoom = false
     @Volatile private var isLeavingRoom = false
     @Volatile private var isRecovering = false
@@ -79,6 +80,7 @@ class KtorRoomRepository(context: Context) : RoomRepository {
                 ?: throw IllegalStateException("Connect to the same Wi-Fi or local network as the other participants first.")
             val roomId = UUID.randomUUID().toString()
             val joinToken = createSessionToken()
+            val newHostControlToken = createSessionToken()
             val hostMember = RoomMember(UUID.randomUUID().toString(), normalizedDisplayName, isHost = true)
             val roomServer = KtorRoomServer(
                 bindAddress = hostAddress,
@@ -86,6 +88,7 @@ class KtorRoomRepository(context: Context) : RoomRepository {
                 roomName = normalizedRoomName,
                 hostName = normalizedDisplayName,
                 sessionToken = joinToken,
+                hostControlToken = newHostControlToken,
                 hostMember = hostMember,
                 onMembersChanged = ::onHostMembersChanged
             )
@@ -93,6 +96,7 @@ class KtorRoomRepository(context: Context) : RoomRepository {
             try {
                 val port = withContext(Dispatchers.IO) { roomServer.start() }
                 server = roomServer
+                hostControlToken = newHostControlToken
                 _activeRoom.value = RoomSession(
                     roomId = roomId,
                     roomName = normalizedRoomName,
@@ -115,7 +119,8 @@ class KtorRoomRepository(context: Context) : RoomRepository {
                         displayName = normalizedDisplayName,
                         sessionToken = joinToken,
                         localMemberId = hostMember.id,
-                        isHost = true
+                        isHost = true,
+                        hostControlToken = newHostControlToken
                     )
                 }
                 client = hostClient
@@ -138,6 +143,7 @@ class KtorRoomRepository(context: Context) : RoomRepository {
                 runCatching { roomServer.stop() }
                 server = null
                 client = null
+                hostControlToken = null
                 _activeRoom.value = null
                 throw cancelled
             } catch (error: Throwable) {
@@ -147,6 +153,7 @@ class KtorRoomRepository(context: Context) : RoomRepository {
                 runCatching { roomServer.stop() }
                 server = null
                 client = null
+                hostControlToken = null
                 _activeRoom.value = null
                 throw IllegalStateException("Could not start the room: ${error.message ?: "unknown error"}", error)
             }
@@ -296,6 +303,7 @@ class KtorRoomRepository(context: Context) : RoomRepository {
                     client = null
                     runCatching { server?.stop() }
                     server = null
+                    hostControlToken = null
                 } finally {
                     _activeRoom.value = null
                     isLeavingHostRoom = false
@@ -372,7 +380,8 @@ class KtorRoomRepository(context: Context) : RoomRepository {
                     displayName = room.hostName,
                     sessionToken = room.joinToken.orEmpty(),
                     localMemberId = room.localMemberId,
-                    isHost = true
+                    isHost = true,
+                    hostControlToken = hostControlToken
                 )
             }
             client = hostClient
@@ -477,6 +486,7 @@ class KtorRoomRepository(context: Context) : RoomRepository {
             val hostAddress = findLocalAddress()
                 ?: throw IllegalStateException("Connect to the same Wi-Fi network before taking over the room.")
             val newHost = candidate.copy(isHost = true)
+            val newHostControlToken = createSessionToken()
             val restoredMembers = listOf(newHost) + room.members.filter {
                 it.id != room.localMemberId && !it.isHost
             }
@@ -486,12 +496,14 @@ class KtorRoomRepository(context: Context) : RoomRepository {
                 roomName = room.roomName,
                 hostName = newHost.displayName,
                 sessionToken = token,
+                hostControlToken = newHostControlToken,
                 hostMember = newHost,
                 onMembersChanged = ::onHostMembersChanged,
                 initialMembers = restoredMembers
             )
             val port = withContext(Dispatchers.IO) { newServer.start() }
             server = newServer
+            hostControlToken = newHostControlToken
             runCatching { client?.leave() }
             val hostClient = createRoomClient()
             try {
@@ -503,7 +515,8 @@ class KtorRoomRepository(context: Context) : RoomRepository {
                         displayName = newHost.displayName,
                         sessionToken = token,
                         localMemberId = newHost.id,
-                        isHost = true
+                        isHost = true,
+                        hostControlToken = newHostControlToken
                     )
                 }
                 client = hostClient
@@ -519,6 +532,7 @@ class KtorRoomRepository(context: Context) : RoomRepository {
                 runCatching { hostClient.leave() }
                 runCatching { newServer.stop() }
                 server = null
+                hostControlToken = null
                 throw error
             }
         }
