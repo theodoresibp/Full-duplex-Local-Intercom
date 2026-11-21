@@ -94,7 +94,13 @@ class IntercomAudioService : Service() {
                 it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
                     it.type == AudioDeviceInfo.TYPE_BLE_HEADSET
             } ?: devices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
-            runCatching { preferred?.let(audioManager::setCommunicationDevice) }
+            val routed = preferred?.let {
+                runCatching { audioManager.setCommunicationDevice(it) }.getOrDefault(false)
+            } ?: false
+            if (!routed) {
+                @Suppress("DEPRECATION")
+                audioManager.isSpeakerphoneOn = true
+            }
         } else {
             val bluetoothAvailable = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
                 .any { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO }
