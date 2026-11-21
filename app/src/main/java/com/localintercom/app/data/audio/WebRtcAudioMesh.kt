@@ -39,6 +39,7 @@ internal class WebRtcAudioMesh(
 ) {
     private val appContext = context.applicationContext
     private val peers = ConcurrentHashMap<String, Peer>()
+    private val knownMembers = ConcurrentHashMap<String, RoomMember>()
     private val factory: PeerConnectionFactory
     private val audioDeviceModule: JavaAudioDeviceModule
     private val audioSource: AudioSource
@@ -66,6 +67,8 @@ internal class WebRtcAudioMesh(
         if (closed) return
         selectedChannelId = activeChannelId
         val remoteMembers = members.filter { it.id != localMemberId }
+        knownMembers.clear()
+        remoteMembers.forEach { knownMembers[it.id] = it }
         val remoteIds = remoteMembers.mapTo(mutableSetOf()) { it.id }
 
         peers.keys.toList().filterNot(remoteIds::contains).forEach(::removePeer)
@@ -74,6 +77,14 @@ internal class WebRtcAudioMesh(
             peer.member = member
             peer.remoteAudioTrack?.setEnabled(member.channelId == selectedChannelId)
         }
+        onStatusChanged(peers.values.count { it.connected })
+    }
+
+    fun memberRejoined(memberId: String) {
+        if (closed || memberId == localMemberId) return
+        val member = knownMembers[memberId] ?: return
+        removePeer(memberId)
+        peers[memberId] = createPeer(member)
         onStatusChanged(peers.values.count { it.connected })
     }
 
