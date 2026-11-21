@@ -229,6 +229,7 @@ private fun DiscoveredRoomCard(room: DiscoveredRoom, selected: Boolean, onClick:
 
 @Composable
 private fun ActiveRoomScreen(room: RoomSession, state: RoomScreenState, viewModel: RoomViewModel) {
+    var isPttPressed by remember(room.localMemberId) { mutableStateOf(false) }
     Column(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -266,23 +267,25 @@ private fun ActiveRoomScreen(room: RoomSession, state: RoomScreenState, viewMode
                 .height(104.dp)
                 .pointerInput(room.localMemberId) {
                     detectTapGestures(onPress = {
+                        isPttPressed = true
                         viewModel.setPttActive(true)
                         try {
                             tryAwaitRelease()
                         } finally {
+                            isPttPressed = false
                             viewModel.setPttActive(false)
                         }
                     })
                 },
             shape = RoundedCornerShape(18.dp),
-            color = MaterialTheme.colorScheme.primaryContainer
+            color = if (isPttPressed) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primaryContainer
         ) {
             androidx.compose.foundation.layout.Box(contentAlignment = Alignment.Center) {
                 Text(
-                    "HOLD TO TALK",
+                    if (isPttPressed) "TRANSMITTING" else "HOLD TO TALK",
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                    color = if (isPttPressed) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onPrimaryContainer
                 )
             }
         }
