@@ -150,6 +150,7 @@ class KtorRoomRepository(context: Context) : RoomRepository {
                 runCatching { hostClient?.leave() }
                 runCatching { audioMesh?.close() }
                 audioMesh = null
+                IntercomAudioService.stop(appContext)
                 runCatching { roomServer.stop() }
                 server = null
                 client = null
@@ -244,6 +245,10 @@ class KtorRoomRepository(context: Context) : RoomRepository {
             } catch (cancelled: CancellationException) {
                 isLeavingRoom = true
                 runCatching { roomClient.leave() }
+                runCatching { audioMesh?.close() }
+                audioMesh = null
+                IntercomAudioService.stop(appContext)
+                client = null
                 _activeRoom.value = null
                 isLeavingRoom = false
                 throw cancelled
