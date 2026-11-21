@@ -28,5 +28,10 @@ jobs:
       - name: Install Android platform
         run: sdkmanager "platforms;android-36"
 
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: "9.6.0"
+
       - name: Run unit tests and assemble debug APK
-        run: ./gradlew --no-daemon :app:testDebugUnitTest :app:assembleDebug --stacktrace
+        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug --stacktrace
