@@ -132,5 +132,18 @@ class RoomRulesTest {
         assertEquals(IntercomChannels.EMERGENCY, roster.snapshot().first().channelId)
     }
 
+    @Test
+    fun restoredRosterKeepsExistingParticipantsAndChannels() = runBlocking {
+        val newHost = RoomMember("member-1", "New host", isHost = true, channelId = IntercomChannels.TEAM_A)
+        val guest = RoomMember("member-2", "Guest", isHost = false, channelId = IntercomChannels.SECURITY)
+
+        val roster = RoomRoster(newHost, listOf(newHost, guest))
+
+        val snapshot = roster.snapshot()
+        assertEquals(listOf("member-1", "member-2"), snapshot.map(RoomMember::id))
+        assertEquals(IntercomChannels.TEAM_A, snapshot[0].channelId)
+        assertEquals(IntercomChannels.SECURITY, snapshot[1].channelId)
+    }
+
     private fun hostMember() = RoomMember("host", "Host", isHost = true)
 }
