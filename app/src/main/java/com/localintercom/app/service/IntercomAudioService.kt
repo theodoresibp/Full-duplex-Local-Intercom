@@ -9,11 +9,14 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.media.AudioAttributes
+import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
 import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.media.session.MediaSession
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.os.IBinder
 import android.view.KeyEvent
 import androidx.core.app.NotificationCompat
@@ -25,6 +28,7 @@ class IntercomAudioService : Service() {
     private var audioFocusRequest: AudioFocusRequest? = null
     private var legacyScoStarted = false
     private var headsetPttDown = false
+    private var audioDeviceCallback: AudioDeviceCallback? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -33,6 +37,16 @@ class IntercomAudioService : Service() {
         configureAudioFocus()
         configureMediaSession()
         configureCommunicationRoute()
+        audioDeviceCallback = object : AudioDeviceCallback() {
+            override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>) {
+                configureCommunicationRoute()
+            }
+
+            override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>) {
+                configureCommunicationRoute()
+            }
+        }
+        audioManager.registerAudioDeviceCallback(audioDeviceCallback, Handler(Looper.getMainLooper()))
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -87,12 +101,20 @@ class IntercomAudioService : Service() {
             if (bluetoothAvailable) {
                 @Suppress("DEPRECATION")
                 runCatching {
-                    audioManager.startBluetoothSco()
+                    audioManager.isSpeakerphoneOn = false
+                    if (!legacyScoStarted) audioManager.startBluetoothSco()
                     @Suppress("DEPRECATION")
                     audioManager.isBluetoothScoOn = true
                     legacyScoStarted = true
                 }
             } else {
+                if (legacyScoStarted) {
+                    @Suppress("DEPRECATION")
+                    audioManager.isBluetoothScoOn = false
+                    @Suppress("DEPRECATION")
+                    audioManager.stopBluetoothSco()
+                    legacyScoStarted = false
+                }
                 @Suppress("DEPRECATION")
                 audioManager.isSpeakerphoneOn = true
             }
@@ -194,6 +216,8 @@ class IntercomAudioService : Service() {
     override fun onDestroy() {
         pttCallback?.invoke(false)
         headsetPttDown = false
+        audioDeviceCallback?.let(audioManager::unregisterAudioDeviceCallback)
+        audioDeviceCallback = null
         mediaSession?.run {
             isActive = false
             release()
