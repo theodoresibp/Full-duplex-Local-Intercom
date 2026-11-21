@@ -1,30 +1,37 @@
 # Audio Engine
 
-## Initial design
+## Implemented audio path
 
-- WebRTC peer-to-peer audio mesh.
-- Opus codec, mono, 48 kHz.
-- Initial target bitrate: 32 kbit/s per outgoing peer stream (to be measured/tuned).
-- DTLS-SRTP for encrypted media.
-- ICE host candidates for same-LAN connectivity; no internet service dependency.
-- Enable platform/WebRTC echo cancellation, noise suppression and gain control where supported and validate on target devices.
+- WebRTC Android SDK from Maven Central.
+- One PeerConnection per remote participant, up to five connections on a six-person room.
+- Mono audio track published directly to every peer; no audio relay or mixer on the room host.
+- WebRTC's built-in Opus audio codec and DTLS-SRTP media protection.
+- No STUN/TURN servers. Peer connections are configured for same-LAN host candidates and prefer Wi-Fi interfaces.
+- Hardware echo cancellation and noise suppression are enabled when supported by the Android device.
+- PTT disables the local outgoing audio track until the user presses and holds the on-screen PTT surface or a supported headset media button.
+
+The audio engine is implemented in code but its latency, codec behavior, and multi-device stability have not yet been measured on physical devices.
 
 ## Full-duplex behavior
 
-Every participant may publish at the same time. The local device receives audio from all peers in the active channel and mixes playback locally. PTT gates only the local microphone's outgoing track. There is no single-speaker token or global audio floor.
+Every participant may publish at the same time. Each device receives audio from all peers and WebRTC handles local playback mixing. PTT gates only the local microphone's outgoing track. There is no single-speaker token or global audio floor.
 
 ## Channel isolation
 
-A participant subscribes to the currently selected channel. Switching channels updates track enable/subscription state without tearing down every peer connection where possible. The channel state is authoritative from the current room coordinator and versioned by room epoch.
+Each member has one active channel ID. The room host validates channel IDs and broadcasts updated member state. Each receiver enables remote audio tracks only when that sender's channel matches the local selected channel. The five default channel IDs are General, Team A, Team B, Security, and Emergency.
+
+This is receiver-side isolation, not cryptographic per-channel access control: audio packets are still sent over each peer connection and a modified client could choose to unmute another track.
 
 ## Bluetooth and routing
 
-Use Android AudioManager communication-device routing and MediaSession/media-button events. Headset implementations vary: some provide distinct key-down/key-up events, while others emit only a click. Support configurable hold-to-talk when reliable press/release events exist, plus toggle-to-talk as a compatibility mode. Channel switching mappings must be configurable and must not assume every headset exposes multiple buttons.
+The microphone foreground service uses Android AudioManager communication routing. It prefers a connected Bluetooth SCO/BLE communication device and falls back to the built-in speaker. Android MediaSession handles headset media-button down/up events for PTT when the headset exposes them.
+
+Headset implementations vary. Some emit reliable press/release events; others only emit a click or map a button to a media action. Toggle-to-talk fallback and configurable button mappings are not implemented yet.
 
 ## Background operation
 
-The active session is owned by a microphone foreground service. Verify behavior with screen off, locked device, Bluetooth reconnect, audio focus changes, incoming calls and OEM battery restrictions. A persistent notification provides an obvious way to return to or stop the session.
+The active session runs while the microphone foreground service is active. A persistent notification is shown with a way to return to the app. Verify behavior with screen off, locked device, Bluetooth reconnect, audio focus changes, incoming calls, and OEM battery restrictions.
 
 ## Performance validation
 
-Measure end-to-end latency, packet loss, jitter, CPU, battery and thermal behavior with two through six physical Android devices. Treat 150–250 ms as an initial target, not a guarantee.
+Measure end-to-end latency, packet loss, jitter, CPU, battery, and thermal behavior with two through six physical Android devices. Treat 150–250 ms as an initial target, not a guarantee.
