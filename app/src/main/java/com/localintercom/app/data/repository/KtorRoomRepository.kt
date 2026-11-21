@@ -8,6 +8,7 @@ import com.localintercom.app.data.audio.WebRtcAudioMesh
 import com.localintercom.app.data.discovery.AndroidNsdDataSource
 import com.localintercom.app.data.network.KtorRoomClient
 import com.localintercom.app.data.network.KtorRoomServer
+import com.localintercom.app.service.IntercomAudioService
 import com.localintercom.app.domain.model.DiscoveredRoom
 import com.localintercom.app.domain.model.DiscoveryState
 import com.localintercom.app.domain.model.IntercomChannels
@@ -58,6 +59,10 @@ class KtorRoomRepository(context: Context) : RoomRepository {
     private var client: KtorRoomClient? = null
     private var audioMesh: WebRtcAudioMesh? = null
     @Volatile private var isLeavingHostRoom = false
+
+    init {
+        IntercomAudioService.pttCallback = { active -> audioMesh?.setPttActive(active) }
+    }
 
     override suspend fun createRoom(roomName: String, displayName: String) {
         val normalizedRoomName = RoomRules.normalizeRoomName(roomName)
@@ -254,7 +259,10 @@ class KtorRoomRepository(context: Context) : RoomRepository {
                 }
             },
             onStatusChanged = { /* surfaced in the room UI in a later presentation update */ }
-        ).also { it.syncMembers(room.members, room.selectedChannelId) }
+        ).also {
+            it.syncMembers(room.members, room.selectedChannelId)
+            IntercomAudioService.start(appContext)
+        }
     }
 
     override suspend fun selectChannel(channelId: String) {
@@ -274,6 +282,8 @@ class KtorRoomRepository(context: Context) : RoomRepository {
             val current = _activeRoom.value
             audioMesh?.close()
             audioMesh = null
+            IntercomAudioService.pttCallback = null
+            IntercomAudioService.stop(appContext)
             if (current?.isHost == true) {
                 isLeavingHostRoom = true
                 try {
