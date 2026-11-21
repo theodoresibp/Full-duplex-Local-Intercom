@@ -119,9 +119,10 @@ class KtorRoomRepository(context: Context) : RoomRepository {
                     localMemberId = hostMember.id
                 )
 
-                hostClient = createRoomClient()
+                val createdHostClient = createRoomClient()
+                hostClient = createdHostClient
                 val hostSession = withContext(Dispatchers.IO) {
-                    hostClient.join(
+                    createdHostClient.join(
                         hostAddress = hostAddress,
                         port = port,
                         roomId = roomId,
@@ -132,10 +133,10 @@ class KtorRoomRepository(context: Context) : RoomRepository {
                         hostControlToken = newHostControlToken
                     )
                 }
-                client = hostClient
+                client = createdHostClient
                 val session = hostSession.copy(joinToken = joinToken)
                 _activeRoom.value = session
-                startAudioMesh(session, hostClient)
+                startAudioMesh(session, createdHostClient)
 
                 try {
                     nsd.publish(session)
