@@ -24,8 +24,9 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
-        with:
-          packages: 'platform-tools platforms;android-37'
+
+      - name: Install Android platform
+        run: sdkmanager "platforms;android-36"
 
       - name: Run unit tests and assemble debug APK
         run: ./gradlew --no-daemon :app:testDebugUnitTest :app:assembleDebug --stacktrace
