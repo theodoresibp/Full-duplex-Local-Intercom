@@ -75,20 +75,26 @@ class IntercomAudioService : Service() {
 
     private fun configureCommunicationRoute() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            val preferred = audioManager.availableCommunicationDevices.firstOrNull {
+            val devices = audioManager.availableCommunicationDevices
+            val preferred = devices.firstOrNull {
                 it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
                     it.type == AudioDeviceInfo.TYPE_BLE_HEADSET
-            }
-            if (preferred != null) {
-                audioManager.setCommunicationDevice(preferred)
-            }
+            } ?: devices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
+            preferred?.let(audioManager::setCommunicationDevice)
         } else {
-            @Suppress("DEPRECATION")
-            runCatching {
-                audioManager.startBluetoothSco()
+            val bluetoothAvailable = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+                .any { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO }
+            if (bluetoothAvailable) {
                 @Suppress("DEPRECATION")
-                audioManager.isBluetoothScoOn = true
-                legacyScoStarted = true
+                runCatching {
+                    audioManager.startBluetoothSco()
+                    @Suppress("DEPRECATION")
+                    audioManager.isBluetoothScoOn = true
+                    legacyScoStarted = true
+                }
+            } else {
+                @Suppress("DEPRECATION")
+                audioManager.isSpeakerphoneOn = true
             }
         }
     }
