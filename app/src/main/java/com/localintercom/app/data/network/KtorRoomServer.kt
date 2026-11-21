@@ -392,7 +392,7 @@ internal class KtorRoomServer(
     companion object {
         private const val MAX_MESSAGE_BYTES = 8_192L
         private const val JOIN_TIMEOUT_MILLIS = 10_000L
-        private const val HEARTBEAT_INTERVAL_MILLIS = 5_000L
+        private const val HEARTBEAT_INTERVAL_MILLIS = 2_000L
         private const val SOCKET_SEND_TIMEOUT_MILLIS = 2_000L
         private const val SOCKET_CLOSE_TIMEOUT_MILLIS = 500L
         private const val SERVER_SHUTDOWN_GRACE_MILLIS = 250L
