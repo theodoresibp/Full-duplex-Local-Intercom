@@ -45,6 +45,7 @@ internal class KtorRoomServer(
     private val roomName: String,
     private val hostName: String,
     private val sessionToken: String,
+    private val hostControlToken: String,
     hostMember: RoomMember,
     private val onMembersChanged: (List<RoomMember>) -> Unit,
     initialMembers: List<RoomMember> = listOf(hostMember)
@@ -142,7 +143,9 @@ internal class KtorRoomServer(
                 if (closed) {
                     JoinResult.Rejected("room_closed", "The host has closed this room.")
                 } else if (requestedMemberId == hostMemberId) {
-                    if (clients.containsKey(hostMemberId)) {
+                    if (!RoomRules.isSessionTokenValid(hostControlToken, request.payload.optString("hostToken"))) {
+                        JoinResult.Rejected("invalid_host_credential", "The host signaling credential is invalid.")
+                    } else if (clients.containsKey(hostMemberId)) {
                         JoinResult.Rejected("host_already_connected", "The host signaling connection is already active.")
                     } else {
                         val snapshot = roster.snapshot()
