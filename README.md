@@ -43,11 +43,19 @@ The current WebSocket signaling endpoint uses `ws://` on the local network; the 
 
 ## Build and test
 
-Open the project in Android Studio and run the `testDebugUnitTest` and `assembleDebug` Gradle tasks. On a machine with Gradle installed:
+The repository includes `gradlew` and `gradlew.bat) bootstrap scripts. The first run downloads the pinned Gradle distribution from the official Gradle distribution host.
 
 ```bash
-gradle :app:testDebugUnitTest :app:assembleDebug
+./gradlew :app:testDebugUnitTest :app:assembleDebug
 ```
+
+On Windows:
+
+```bat
+gradlew.bat :app:testDebugUnitTest :app:assembleDebug
+```
+
+You can also open the project in Android Studio and run the same Gradle tasks.
 
 ## Documentation
 
