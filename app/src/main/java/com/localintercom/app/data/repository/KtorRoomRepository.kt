@@ -231,13 +231,12 @@ class KtorRoomRepository(context: Context) : RoomRepository {
     private fun createRoomClient(): KtorRoomClient = KtorRoomClient(
         scope = scope,
         onSessionUpdated = { updated ->
-            _activeRoom.update { current ->
-                updated.copy(
-                    joinToken = current?.joinToken ?: updated.joinToken,
-                    selectedChannelId = current?.selectedChannelId ?: updated.selectedChannelId
-                )
-            }
-            audioMesh?.syncMembers(updated.members, updated.selectedChannelId)
+            val merged = updated.copy(
+                joinToken = _activeRoom.value?.joinToken ?: updated.joinToken,
+                selectedChannelId = _activeRoom.value?.selectedChannelId ?: updated.selectedChannelId
+            )
+            _activeRoom.value = merged
+            audioMesh?.syncMembers(merged.members, merged.selectedChannelId)
         },
         onDisconnected = {
             _activeRoom.update { it?.copy(connectionStatus = RoomConnectionStatus.DISCONNECTED) }
