@@ -46,11 +46,12 @@ internal class KtorRoomServer(
     private val hostName: String,
     private val sessionToken: String,
     hostMember: RoomMember,
-    private val onMembersChanged: (List<RoomMember>) -> Unit
+    private val onMembersChanged: (List<RoomMember>) -> Unit,
+    initialMembers: List<RoomMember> = listOf(hostMember)
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val roomEventsMutex = Mutex()
-    private val roster = RoomRoster(hostMember)
+    private val roster = RoomRoster(hostMember, initialMembers)
     private val hostMemberId = hostMember.id
     private val clients = ConcurrentHashMap<String, ClientSocket>()
     private var server: EmbeddedServer<*, *>? = null
@@ -161,6 +162,37 @@ internal class KtorRoomServer(
                         accepted = true
                         clients[hostMemberId] = socketClient
                         JoinResult.Accepted
+                    }
+                } else if (requestedMemberId.isNotBlank()) {
+                    val snapshot = roster.snapshot()
+                    val existingMember = snapshot.firstOrNull {
+                        it.id == requestedMemberId && !it.isHost
+                    }
+                    when {
+                        existingMember == null ->
+                            JoinResult.Rejected("unknown_member", "This participant is not part of the restored room.")
+                        existingMember.displayName != displayName ->
+                            JoinResult.Rejected("member_identity_mismatch", "The participant name does not match the restored room.")
+                        clients.containsKey(existingMember.id) ->
+                            JoinResult.Rejected("member_already_connected", "This participant is already connected.")
+                        else -> {
+                            val socketClient = ClientSocket(socket)
+                            val acceptedPayload = JSONObject()
+                                .put("memberId", existingMember.id)
+                                .put("room", roomStatePayload(snapshot, roomStatus(snapshot)))
+                            val acceptedFrame = RoomProtocol.createEvent(
+                                RoomProtocol.JOIN_ACCEPTED,
+                                acceptedPayload,
+                                request.requestId
+                            ).toString()
+                            if (!socketClient.sendSafely(acceptedFrame)) {
+                                throw IOException("Could not deliver the restored participant response.")
+                            }
+                            rosterMemberId = existingMember.id
+                            accepted = true
+                            clients[existingMember.id] = socketClient
+                            JoinResult.Accepted
+                        }
                     }
                 } else {
                     val member = RoomMember(UUID.randomUUID().toString(), displayName, isHost = false)
