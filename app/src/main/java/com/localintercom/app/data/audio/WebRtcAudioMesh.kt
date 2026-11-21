@@ -133,8 +133,8 @@ internal class WebRtcAudioMesh(
                     flushPendingCandidates(peer)
                     val answer = createAnswer(peer.connection)
                     setLocalDescription(peer.connection, answer)
-                    queueSignal(
-                        signal.fromMemberId,
+                    signalLocalDescription(
+                        peer,
                         RoomProtocol.SIGNAL_ANSWER,
                         JSONObject().put("sdp", answer.description)
                     )
@@ -167,6 +167,18 @@ internal class WebRtcAudioMesh(
         }
     }
 
+    private fun signalLocalDescription(peer: Peer, signalType: String, data: JSONObject) {
+        synchronized(peer.localSignalLock) {
+            if (closed) return
+            queueSignal(peer.member.id, signalType, data)
+            peer.localDescriptionSignaled = true
+            peer.pendingLocalCandidates.forEach { candidate ->
+                queueSignal(peer.member.id, RoomProtocol.SIGNAL_ICE, candidate)
+            }
+            peer.pendingLocalCandidates.clear()
+        }
+    }
+
     private fun queueSignal(toMemberId: String, signalType: String, data: JSONObject) {
         if (!closed) outgoingSignals.trySend(OutgoingSignal(toMemberId, signalType, data))
     }
@@ -193,14 +205,17 @@ internal class WebRtcAudioMesh(
             override fun onIceGatheringChange(newState: PeerConnection.IceGatheringState) = Unit
             override fun onIceCandidate(candidate: IceCandidate) {
                 if (!HOST_CANDIDATE_PATTERN.containsMatchIn(candidate.sdp)) return
-                queueSignal(
-                    member.id,
-                    RoomProtocol.SIGNAL_ICE,
-                    JSONObject()
-                        .put("sdpMid", candidate.sdpMid)
-                        .put("sdpMLineIndex", candidate.sdpMLineIndex)
-                        .put("candidate", candidate.sdp)
-                )
+                val candidateData = JSONObject()
+                    .put("sdpMid", candidate.sdpMid)
+                    .put("sdpMLineIndex", candidate.sdpMLineIndex)
+                    .put("candidate", candidate.sdp)
+                synchronized(peer.localSignalLock) {
+                    if (peer.localDescriptionSignaled) {
+                        queueSignal(member.id, RoomProtocol.SIGNAL_ICE, candidateData)
+                    } else {
+                        peer.pendingLocalCandidates += candidateData
+                    }
+                }
             }
             override fun onIceCandidatesRemoved(candidates: Array<IceCandidate>) = Unit
             override fun onAddStream(stream: MediaStream) = Unit
@@ -233,8 +248,8 @@ internal class WebRtcAudioMesh(
     private suspend fun negotiateOffer(peer: Peer) {
         val offer = createOffer(peer.connection)
         setLocalDescription(peer.connection, offer)
-        queueSignal(
-            peer.member.id,
+        signalLocalDescription(
+            peer,
             RoomProtocol.SIGNAL_OFFER,
             JSONObject().put("sdp", offer.description)
         )
@@ -355,7 +370,10 @@ internal class WebRtcAudioMesh(
         var connected: Boolean = false,
         var remoteDescriptionSet: Boolean = false,
         var remoteAudioTrack: AudioTrack? = null,
-        val pendingCandidates: MutableList<IceCandidate> = mutableListOf()
+        val pendingCandidates: MutableList<IceCandidate> = mutableListOf(),
+        val localSignalLock: Any = Any(),
+        var localDescriptionSignaled: Boolean = false,
+        val pendingLocalCandidates: MutableList<JSONObject> = mutableListOf()
     )
 
     private object WebRtcRuntime {
