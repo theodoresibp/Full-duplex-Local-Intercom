@@ -43,7 +43,7 @@ The current WebSocket signaling endpoint uses `ws://` on the local network; the 
 
 ## Build and test
 
-The repository includes `gradlew` and `gradlew.bat) bootstrap scripts. The first run downloads the pinned Gradle distribution from the official Gradle distribution host.
+The repository includes `gradlew` and `gradlew.bat` bootstrap scripts. The first run downloads the pinned Gradle distribution from the official Gradle distribution host.
 
 ```bash
 ./gradlew :app:testDebugUnitTest :app:assembleDebug
