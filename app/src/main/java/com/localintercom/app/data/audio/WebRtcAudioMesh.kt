@@ -139,6 +139,8 @@ internal class WebRtcAudioMesh(
             bundlePolicy = PeerConnection.BundlePolicy.MAXBUNDLE
             rtcpMuxPolicy = PeerConnection.RtcpMuxPolicy.REQUIRE
             iceTransportsType = PeerConnection.IceTransportsType.ALL
+            candidateNetworkPolicy = PeerConnection.CandidateNetworkPolicy.LOW_COST
+            networkPreference = PeerConnection.AdapterType.WIFI
         }
         lateinit var peer: Peer
         val observer = object : PeerConnection.Observer {
