@@ -283,6 +283,9 @@ class KtorRoomRepository(context: Context) : RoomRepository {
         },
         onSignal = { fromMemberId, signalType, data ->
             audioMesh?.handleSignal(fromMemberId, signalType, data)
+        },
+        onMemberRejoined = { memberId ->
+            audioMesh?.memberRejoined(memberId)
         }
     )
 
