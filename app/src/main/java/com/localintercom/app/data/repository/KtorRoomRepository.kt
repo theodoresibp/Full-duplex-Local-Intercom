@@ -291,7 +291,7 @@ class KtorRoomRepository(context: Context) : RoomRepository {
 
     private fun startAudioMesh(room: RoomSession, roomClient: KtorRoomClient) {
         audioMesh?.close()
-        audioMesh = WebRtcAudioMesh(
+        val newMesh = WebRtcAudioMesh(
             context = appContext,
             scope = scope,
             localMemberId = room.localMemberId,
@@ -301,10 +301,10 @@ class KtorRoomRepository(context: Context) : RoomRepository {
                 }
             },
             onStatusChanged = { /* surfaced in the room UI in a later presentation update */ }
-        ).also {
-            it.syncMembers(room.members, room.selectedChannelId)
-            IntercomAudioService.start(appContext)
-        }
+        )
+        audioMesh = newMesh
+        newMesh.syncMembers(room.members, room.selectedChannelId)
+        IntercomAudioService.start(appContext)
     }
 
     override suspend fun selectChannel(channelId: String) {
