@@ -89,7 +89,16 @@ class RoomViewModel(private val repository: RoomRepository) : ViewModel() {
         )
     }
 
+    fun selectChannel(channelId: String) = launchOperation {
+        repository.selectChannel(channelId)
+    }
+
+    fun setPttActive(active: Boolean) = repository.setPttActive(active)
+
+    fun showMessage(message: String) = _state.update { it.copy(message = message) }
+
     fun leaveRoom() = launchOperation {
+        setPttActive(false)
         leaveRoomUseCase()
     }
 
