@@ -146,6 +146,7 @@ class KtorRoomRepository(context: Context) : RoomRepository {
                     )
                 }
             } catch (cancelled: CancellationException) {
+                isLeavingRoom = true
                 runCatching { hostClient?.leave() }
                 runCatching { audioMesh?.close() }
                 audioMesh = null
@@ -154,8 +155,10 @@ class KtorRoomRepository(context: Context) : RoomRepository {
                 client = null
                 hostControlToken = null
                 _activeRoom.value = null
+                isLeavingRoom = false
                 throw cancelled
             } catch (error: Throwable) {
+                isLeavingRoom = true
                 runCatching { hostClient?.leave() }
                 runCatching { audioMesh?.close() }
                 audioMesh = null
@@ -164,6 +167,7 @@ class KtorRoomRepository(context: Context) : RoomRepository {
                 client = null
                 hostControlToken = null
                 _activeRoom.value = null
+                isLeavingRoom = false
                 throw IllegalStateException("Could not start the room: ${error.message ?: "unknown error"}", error)
             }
         }
@@ -238,10 +242,16 @@ class KtorRoomRepository(context: Context) : RoomRepository {
                 _activeRoom.value = joinedRoom
                 startAudioMesh(joinedRoom, roomClient)
             } catch (cancelled: CancellationException) {
+                isLeavingRoom = true
                 runCatching { roomClient.leave() }
+                _activeRoom.value = null
+                isLeavingRoom = false
                 throw cancelled
             } catch (error: Throwable) {
+                isLeavingRoom = true
                 runCatching { roomClient.leave() }
+                _activeRoom.value = null
+                isLeavingRoom = false
                 throw error
             }
         }
