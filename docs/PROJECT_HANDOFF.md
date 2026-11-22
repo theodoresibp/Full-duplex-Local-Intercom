@@ -1,6 +1,6 @@
 # Project Handoff — Full-duplex Local Intercom
 
-Last updated: 2026-11-21
+Last updated: 2026-11-22
 
 ## Purpose
 
@@ -28,6 +28,8 @@ Native Android LAN intercom for up to 6 participants per room. It must work over
 - Draft PR: https://github.com/theodoresibp/Full-duplex-Local-Intercom/pull/1
 - Do not merge to main or ask the user to pull until CI is green and review is complete.
 - Latest known development commits:
+  - `09e0ecf519f04cd8398b1cea7f9383d03dae2372` — prevent concurrent room recovery attempts with an atomic compare-and-set guard; skip stale recovery if the room is already connected or the user is leaving.
+  - `5756582a737adecaea1fa55d13b03f716a7ce5f0` — send local SDP before queued ICE candidates.
   - `29f17bb23b644f41a0f34af1931a35448b43175c` — install Android 17 SDK in CI
   - `b3191dc18172c24308629662c4dd03b87167ed16` — compile against Android 17
   - `401261220ef8d7528611dabf9edad372365f55aa` — LAN ICE host-candidate filtering and prior dependency adjustments
@@ -42,17 +44,27 @@ Native Android LAN intercom for up to 6 participants per room. It must work over
 - Channel selection and room UI integration are present.
 - Host recovery/election logic exists but is not proven robust.
 
-## Latest CI status / immediate build issue
+## Latest CI status / build
 
-- CI at commit `401261220ef8d7528611dabf9edad372365f55aa` failed in `:app:testDebugUnitTest :app:assembleDebug`.
-- Root cause in logs: transitive Compose / Lifecycle artifacts (including Compose 1.12.1) require compileSdk 37+, while app was set to compileSdk 36.
-- Corrective changes have now been pushed:
-  - `app/build.gradle.kts`: `compileSdk = 37`; targetSdk remains 35, minSdk remains 29.
-  - `.github/workflows/android-ci.yml`: install `platforms;android-37.0` and `build-tools;37.0.0`.
-- Android's official Android 17 setup guide documents compileSdk 37; this does not require raising targetSdk to 37.
-- A new CI run was queued for commit `b3191dc...`; a subsequent workflow trigger may run for `29f17bb...`. Check Actions for the newest run and inspect logs before assuming success.
-- If SDK package install fails, inspect exact sdkmanager package IDs. Android 17 platform packages use minor-versioned package IDs such as `android-37.0`.
-- No successful unit test or APK build has yet been confirmed.
+- Latest confirmed green CI before the newest recovery-guard change: run `44919384680` for commit `5756582a737adecaea1fa55d13b03f716a7ce5f0`; conclusion `success`.
+- That CI run covers the existing Android CI workflow. The new commit `09e0ecf519f04cd8398b1cea7f9383d03dae2372` has just been pushed; its CI result must be checked before treating the branch as green.
+- App SDK configuration: `compileSdk = 37`, `targetSdk = 35`, `minSdk = 29`.
+- CI installs `platforms;android-37.0` and `build-tools;37.0.0`.
+- Required CI tasks: `:app:testDebugUnitTest` and `:app:assembleDebug`.
+- Do not ask the user to pull until CI for the latest branch head is green and code review is complete.
+
+## Review update — 2026-11-22
+
+- Confirmed branch head before the latest change was `5756582a737adecaea1fa55d13b03f716a7ce5f0`; CI run `44919384680` completed successfully.
+- Reviewed repository recovery, foreground audio service, room server, room UI, and manifest.
+- Fixed a race in `KtorRoomRepository.scheduleConnectionRecovery()`: a volatile Boolean check/set was not atomic, so simultaneous WebSocket disconnect callbacks could start multiple recovery jobs. It now uses `AtomicBoolean.compareAndSet` and resets in `finally`. It also avoids starting stale recovery if the room has already reconnected or is being left.
+- New commit: `09e0ecf519f04cd8398b1cea7f9383d03dae2372`. CI for this commit is pending / must be checked.
+- Confirmed current implementation still has important limitations:
+  - Host election is best-effort and has no room epoch / fencing token; split-brain is possible under delayed discovery or network partition.
+  - Bluetooth media-button PTT depends on device firmware delivering distinct key-down and key-up events; some headsets only send a click/toggle.
+  - Android audio routing currently prefers Bluetooth, then wired/USB, then built-in speaker. Real-device microphone/earpiece routing and screen-off behavior are unverified.
+  - The repository uses the active Wi-Fi transport to choose a local address, but candidate filtering and network binding still need review for strict Wi-Fi-only behavior.
+- No physical multi-device audio or failover test has been run.
 
 ## Important review risks / next work
 
