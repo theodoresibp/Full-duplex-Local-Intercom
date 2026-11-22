@@ -38,6 +38,7 @@ import org.json.JSONObject
 import java.net.Inet4Address
 import java.security.SecureRandom
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicBoolean
 
 class KtorRoomRepository(context: Context) : RoomRepository {
     private val appContext = context.applicationContext
@@ -62,7 +63,7 @@ class KtorRoomRepository(context: Context) : RoomRepository {
     private var hostControlToken: String? = null
     @Volatile private var isLeavingHostRoom = false
     @Volatile private var isLeavingRoom = false
-    @Volatile private var isRecovering = false
+    private val recoveryInProgress = AtomicBoolean(false)
 
     init {
         IntercomAudioService.pttCallback = { active -> audioMesh?.setPttActive(active) }
@@ -385,11 +386,11 @@ class KtorRoomRepository(context: Context) : RoomRepository {
     }
 
     private fun scheduleConnectionRecovery() {
-        if (isLeavingRoom || isRecovering) return
-        isRecovering = true
+        if (isLeavingRoom || !recoveryInProgress.compareAndSet(false, true)) return
         scope.launch {
             try {
                 val room = _activeRoom.value ?: return@launch
+                if (isLeavingRoom || room.connectionStatus == RoomConnectionStatus.CONNECTED) return@launch
                 if (room.isHost) reconnectHostSignaling(room)
                 else recoverAfterHostLoss(room)
             } catch (cancelled: CancellationException) {
@@ -399,7 +400,7 @@ class KtorRoomRepository(context: Context) : RoomRepository {
                     message = "Connection recovery failed: ${error.message ?: "unknown error"}. You can retry joining the room."
                 )
             } finally {
-                isRecovering = false
+                recoveryInProgress.set(false)
             }
         }
     }
