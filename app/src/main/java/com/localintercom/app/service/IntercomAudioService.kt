@@ -27,7 +27,6 @@ class IntercomAudioService : Service() {
     private var mediaSession: MediaSession? = null
     private var audioFocusRequest: AudioFocusRequest? = null
     private var legacyScoStarted = false
-    private var headsetPttDown = false
     private var audioDeviceCallback: AudioDeviceCallback? = null
 
     override fun onCreate() {
@@ -167,7 +166,8 @@ class IntercomAudioService : Service() {
                         return true
                     }
 
-                    if (event.keyCode != pttKey) return super.onMediaButtonEvent(mediaButtonIntent)
+                    val isDefaultPttKey = pttKey == KeyEvent.KEYCODE_HEADSETHOOK && event.keyCode in DEFAULT_PTT_KEYS
+                    if (event.keyCode != pttKey && !isDefaultPttKey) return super.onMediaButtonEvent(mediaButtonIntent)
                     when (event.action) {
                         KeyEvent.ACTION_DOWN -> {
                             if (event.repeatCount == 0 && !headsetPttDown) {
@@ -288,19 +288,30 @@ class IntercomAudioService : Service() {
         const val ACTION_PTT = "ptt"
         const val ACTION_NEXT_CHANNEL = "next_channel"
         const val ACTION_PREVIOUS_CHANNEL = "previous_channel"
-        private const val KEY_CAPTURE_TARGET = "capture_target"
         private const val KEY_PTT_KEYCODE = "mapped_ptt_keycode"
         private const val KEY_NEXT_KEYCODE = "mapped_next_keycode"
         private const val KEY_PREVIOUS_KEYCODE = "mapped_previous_keycode"
         private const val CHANNEL_ID = "local_intercom_audio"
         private const val NOTIFICATION_ID = 4106
+        private val DEFAULT_PTT_KEYS = setOf(
+            KeyEvent.KEYCODE_HEADSETHOOK,
+            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
+            KeyEvent.KEYCODE_MEDIA_PLAY,
+            KeyEvent.KEYCODE_MEDIA_PAUSE
+        )
         @Volatile
         private var headsetToggleActive = false
+
+        @Volatile
+        private var headsetPttDown = false
 
         @Volatile
         private var captureTarget: String? = null
         @Volatile
         var onButtonCaptured: ((String, Int) -> Unit)? = null
+
+        @Volatile
+        var onButtonCaptureRejected: ((String, Int) -> Unit)? = null
 
         @Volatile
         var pttCallback: ((Boolean) -> Unit)? = null
@@ -328,6 +339,10 @@ class IntercomAudioService : Service() {
         fun setMappedKeyCode(context: Context, action: String, keyCode: Int) {
             require(action in setOf(ACTION_PTT, ACTION_NEXT_CHANNEL, ACTION_PREVIOUS_CHANNEL))
             require(keyCode != KeyEvent.KEYCODE_UNKNOWN)
+            val otherActions = listOf(ACTION_PTT, ACTION_NEXT_CHANNEL, ACTION_PREVIOUS_CHANNEL) - action
+            require(otherActions.none { getMappedKeyCode(context, it) == keyCode }) {
+                "This button is already assigned to another action."
+            }
             val key = when (action) {
                 ACTION_PTT -> KEY_PTT_KEYCODE
                 ACTION_NEXT_CHANNEL -> KEY_NEXT_KEYCODE
@@ -336,6 +351,7 @@ class IntercomAudioService : Service() {
             context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
                 .edit().putInt(key, keyCode).apply()
             if (action == ACTION_PTT) {
+                headsetPttDown = false
                 headsetToggleActive = false
                 pttCallback?.invoke(false)
             }
@@ -355,8 +371,9 @@ class IntercomAudioService : Service() {
         private fun captureButton(context: Context, keyCode: Int) {
             val target = captureTarget ?: return
             captureTarget = null
-            setMappedKeyCode(context, target, keyCode)
-            onButtonCaptured?.invoke(target, keyCode)
+            runCatching { setMappedKeyCode(context, target, keyCode) }
+                .onSuccess { onButtonCaptured?.invoke(target, keyCode) }
+                .onFailure { onButtonCaptureRejected?.invoke(target, keyCode) }
         }
 
         fun keyCodeLabel(keyCode: Int): String = KeyEvent.keyCodeToString(keyCode)
