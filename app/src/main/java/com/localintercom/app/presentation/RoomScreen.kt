@@ -21,6 +21,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
@@ -31,6 +32,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -329,6 +331,24 @@ private fun BluetoothPttModeSettings() {
     var selectedMode by remember {
         mutableStateOf(IntercomAudioService.getBluetoothPttMode(context))
     }
+    var captureAction by remember { mutableStateOf<String?>(null) }
+    var capturedMessage by remember { mutableStateOf<String?>(null) }
+    var mappingVersion by remember { mutableStateOf(0) }
+
+    DisposableEffect(Unit) {
+        captureVersionCallback = { action -> captureAction = action }
+        IntercomAudioService.onButtonCaptured = { action, keyCode ->
+            capturedMessage = "${actionLabel(action)} mapped to ${IntercomAudioService.keyCodeLabel(keyCode)}"
+            captureAction = null
+            mappingVersion++
+        }
+        onDispose {
+            IntercomAudioService.cancelButtonCapture()
+            IntercomAudioService.onButtonCaptured = null
+            captureVersionCallback = null
+        }
+    }
+
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text("Bluetooth headset button", style = MaterialTheme.typography.titleMedium)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -353,11 +373,73 @@ private fun BluetoothPttModeSettings() {
             if (selectedMode == IntercomAudioService.BLUETOOTH_PTT_MODE_PRESS_HOLD) {
                 "Hold the headset button to talk; release it to mute."
             } else {
-                "Press once to talk; press again to mute. Works with headsets that send click-style media buttons."
+                "Press once to talk; press again to mute."
             },
             style = MaterialTheme.typography.bodySmall
         )
+
+        Text("Button mapping", style = MaterialTheme.typography.titleSmall)
+        Text("Mapped keys are saved on this device.", style = MaterialTheme.typography.bodySmall)
+        MappingRow(context, IntercomAudioService.ACTION_PTT, "PTT (Transmit)")
+        MappingRow(context, IntercomAudioService.ACTION_NEXT_CHANNEL, "Next channel")
+        MappingRow(context, IntercomAudioService.ACTION_PREVIOUS_CHANNEL, "Previous channel")
+        TextButton(onClick = {
+            IntercomAudioService.setMappedKeyCode(context, IntercomAudioService.ACTION_PTT, android.view.KeyEvent.KEYCODE_HEADSETHOOK)
+            IntercomAudioService.setMappedKeyCode(context, IntercomAudioService.ACTION_NEXT_CHANNEL, android.view.KeyEvent.KEYCODE_MEDIA_NEXT)
+            IntercomAudioService.setMappedKeyCode(context, IntercomAudioService.ACTION_PREVIOUS_CHANNEL, android.view.KeyEvent.KEYCODE_MEDIA_PREVIOUS)
+            mappingVersion++
+            capturedMessage = "Default button mappings restored."
+        }) { Text("Reset mappings") }
+        capturedMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary) }
     }
+
+    if (captureAction != null) {
+        AlertDialog(
+            onDismissRequest = {
+                IntercomAudioService.cancelButtonCapture()
+                captureAction = null
+            },
+            title = { Text("Listen for button") },
+            text = { Text("Press the physical button on your Bluetooth headset now. Only buttons forwarded to Android can be detected.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    IntercomAudioService.cancelButtonCapture()
+                    captureAction = null
+                }) { Text("Cancel") }
+            }
+        )
+    }
+}
+
+@Composable
+private fun MappingRow(context: android.content.Context, action: String, label: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(label, style = MaterialTheme.typography.bodyMedium)
+            Text(
+                IntercomAudioService.keyCodeLabel(
+                    IntercomAudioService.getMappedKeyCode(context, action)
+                ),
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+        TextButton(onClick = {
+            IntercomAudioService.beginButtonCapture(action)
+            captureVersionCallback?.invoke(action)
+        }) { Text("Map") }
+    }
+}
+
+private var captureVersionCallback: ((String) -> Unit)? = null
+
+private fun actionLabel(action: String): String = when (action) {
+    IntercomAudioService.ACTION_PTT -> "PTT"
+    IntercomAudioService.ACTION_NEXT_CHANNEL -> "Next channel"
+    else -> "Previous channel"
 }
 
 @Composable
