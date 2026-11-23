@@ -151,17 +151,23 @@ class IntercomAudioService : Service() {
                         mediaButtonIntent.getParcelableExtra(Intent.EXTRA_KEY_EVENT)
                     } ?: return false
 
-                    if (event.keyCode == KeyEvent.KEYCODE_MEDIA_NEXT ||
-                        event.keyCode == KeyEvent.KEYCODE_MEDIA_PREVIOUS
-                    ) {
+                    if (isCapturingButton()) {
+                        captureButton(this@IntercomAudioService, event.keyCode)
+                        return true
+                    }
+
+                    val pttKey = getMappedKeyCode(this@IntercomAudioService, ACTION_PTT)
+                    val nextKey = getMappedKeyCode(this@IntercomAudioService, ACTION_NEXT_CHANNEL)
+                    val previousKey = getMappedKeyCode(this@IntercomAudioService, ACTION_PREVIOUS_CHANNEL)
+
+                    if (event.keyCode == nextKey || event.keyCode == previousKey) {
                         if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
-                            channelStepCallback?.invoke(
-                                if (event.keyCode == KeyEvent.KEYCODE_MEDIA_NEXT) 1 else -1
-                            )
+                            channelStepCallback?.invoke(if (event.keyCode == nextKey) 1 else -1)
                         }
                         return true
                     }
-                    if (event.keyCode !in SUPPORTED_PTT_KEYS) return super.onMediaButtonEvent(mediaButtonIntent)
+
+                    if (event.keyCode != pttKey) return super.onMediaButtonEvent(mediaButtonIntent)
                     when (event.action) {
                         KeyEvent.ACTION_DOWN -> {
                             if (event.repeatCount == 0 && !headsetPttDown) {
@@ -279,23 +285,84 @@ class IntercomAudioService : Service() {
         const val BLUETOOTH_PTT_MODE_TOGGLE = "toggle"
         private const val PREFERENCES_NAME = "intercom_preferences"
         private const val KEY_BLUETOOTH_PTT_MODE = "bluetooth_ptt_mode"
+        const val ACTION_PTT = "ptt"
+        const val ACTION_NEXT_CHANNEL = "next_channel"
+        const val ACTION_PREVIOUS_CHANNEL = "previous_channel"
+        private const val KEY_CAPTURE_TARGET = "capture_target"
+        private const val KEY_PTT_KEYCODE = "mapped_ptt_keycode"
+        private const val KEY_NEXT_KEYCODE = "mapped_next_keycode"
+        private const val KEY_PREVIOUS_KEYCODE = "mapped_previous_keycode"
         private const val CHANNEL_ID = "local_intercom_audio"
         private const val NOTIFICATION_ID = 4106
-        private val SUPPORTED_PTT_KEYS = setOf(
-            KeyEvent.KEYCODE_HEADSETHOOK,
-            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
-            KeyEvent.KEYCODE_MEDIA_PLAY,
-            KeyEvent.KEYCODE_MEDIA_PAUSE
-        )
-
         @Volatile
         private var headsetToggleActive = false
+
+        @Volatile
+        private var captureTarget: String? = null
+        @Volatile
+        var onButtonCaptured: ((String, Int) -> Unit)? = null
 
         @Volatile
         var pttCallback: ((Boolean) -> Unit)? = null
 
         @Volatile
         var channelStepCallback: ((Int) -> Unit)? = null
+
+        fun getMappedKeyCode(context: Context, action: String): Int {
+            val preferences = context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+            val key = when (action) {
+                ACTION_PTT -> KEY_PTT_KEYCODE
+                ACTION_NEXT_CHANNEL -> KEY_NEXT_KEYCODE
+                ACTION_PREVIOUS_CHANNEL -> KEY_PREVIOUS_KEYCODE
+                else -> return KeyEvent.KEYCODE_UNKNOWN
+            }
+            val default = when (action) {
+                ACTION_PTT -> KeyEvent.KEYCODE_HEADSETHOOK
+                ACTION_NEXT_CHANNEL -> KeyEvent.KEYCODE_MEDIA_NEXT
+                ACTION_PREVIOUS_CHANNEL -> KeyEvent.KEYCODE_MEDIA_PREVIOUS
+                else -> KeyEvent.KEYCODE_UNKNOWN
+            }
+            return preferences.getInt(key, default)
+        }
+
+        fun setMappedKeyCode(context: Context, action: String, keyCode: Int) {
+            require(action in setOf(ACTION_PTT, ACTION_NEXT_CHANNEL, ACTION_PREVIOUS_CHANNEL))
+            require(keyCode != KeyEvent.KEYCODE_UNKNOWN)
+            val key = when (action) {
+                ACTION_PTT -> KEY_PTT_KEYCODE
+                ACTION_NEXT_CHANNEL -> KEY_NEXT_KEYCODE
+                else -> KEY_PREVIOUS_KEYCODE
+            }
+            context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+                .edit().putInt(key, keyCode).apply()
+            if (action == ACTION_PTT) {
+                headsetPttDown = false
+                headsetToggleActive = false
+                pttCallback?.invoke(false)
+            }
+        }
+
+        fun beginButtonCapture(action: String) {
+            require(action in setOf(ACTION_PTT, ACTION_NEXT_CHANNEL, ACTION_PREVIOUS_CHANNEL))
+            captureTarget = action
+        }
+
+        fun cancelButtonCapture() {
+            captureTarget = null
+        }
+
+        private fun isCapturingButton(): Boolean = captureTarget != null
+
+        private fun captureButton(context: Context, keyCode: Int) {
+            val target = captureTarget ?: return
+            captureTarget = null
+            setMappedKeyCode(context, target, keyCode)
+            onButtonCaptured?.invoke(target, keyCode)
+        }
+
+        fun keyCodeLabel(keyCode: Int): String = KeyEvent.keyCodeToString(keyCode)
+            .removePrefix("KEYCODE_")
+            .replace('_', ' ')
 
         fun getBluetoothPttMode(context: Context): String =
             context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
