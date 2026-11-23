@@ -336,7 +336,6 @@ class IntercomAudioService : Service() {
             context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
                 .edit().putInt(key, keyCode).apply()
             if (action == ACTION_PTT) {
-                headsetPttDown = false
                 headsetToggleActive = false
                 pttCallback?.invoke(false)
             }
