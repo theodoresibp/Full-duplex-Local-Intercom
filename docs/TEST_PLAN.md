@@ -14,7 +14,7 @@ CI unit tests cover room rules, six-member capacity, membership removal, and cha
 | TC-08 | Screen off | Foreground service implemented; device test pending | Existing session continues with screen locked |
 | TC-09 | Headset PTT | Partial | Supported headset key-down/key-up controls PTT; click-only headset fallback remains unimplemented |
 | TC-10 | Headset routing | Basic routing implemented; reconnect test pending | Audio moves correctly on headset connect/disconnect/reconnect |
-| TC-11 | Network recovery | Not implemented | Temporary Wi-Fi interruption recovers or reports a clear failure |
+| TC-11 | Network recovery | Basic host-disconnect recovery implemented; transient Wi-Fi interruption not validated | Session recovers after a supported host reconnect or reports a clear failure |
 | TC-12 | Host loss | Basic deterministic handover implemented; device test pending | New coordinator is elected and room state is restored after heartbeat timeout |
 | TC-13 | Security | Partial | Media is encrypted and unauthorized room/signaling targets are rejected; signaling WebSocket is still cleartext on the LAN |
 | TC-14 | Six-device soak | Not validated | Stable session under sustained use; record battery, heat, latency and packet loss |
