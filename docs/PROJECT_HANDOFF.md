@@ -27,12 +27,16 @@ Native Android LAN intercom for up to 6 participants per room. It must work over
 - Main branch is the original baseline; development is on `maintenance/clean-generated-files`.
 - Draft PR: https://github.com/theodoresibp/Full-duplex-Local-Intercom/pull/1
 - Do not merge to main or ask the user to pull until CI is green and review is complete.
-- Latest known development commits:
-  - `09e0ecf519f04cd8398b1cea7f9383d03dae2372` — prevent concurrent room recovery attempts with an atomic compare-and-set guard; skip stale recovery if the room is already connected or the user is leaving.
+- Latest development head before this handoff refresh: `06395f2ef28d294cb42be2a88da7b2281f8d1b7d`.
+- Recent development commits:
+  - `06395f2ef28d294cb42be2a88da7b2281f8d1b7d` — keep a promoted/recovered host room alive if NSD advertisement fails; manual IP/port remains the fallback.
+  - `bbca70c070c1760e742fc77526b9754a1debbed6` — update handoff after WebRTC peer-registration and serialized room-channel changes.
+  - `0e60596bf257fd5f67abfb153720c25c77a00104` — serialize channel roster changes with other room events.
+  - `523845d61b83c2be7b043207fb0660436a3b7ae8` — start WebRTC offers only after peer registration.
+  - `09e0ecf519f04cd8398b1cea7f9383d03dae2372` — prevent concurrent room recovery attempts with an atomic compare-and-set guard.
   - `5756582a737adecaea1fa55d13b03f716a7ce5f0` — send local SDP before queued ICE candidates.
   - `29f17bb23b644f41a0f34af1931a35448b43175c` — install Android 17 SDK in CI
   - `b3191dc18172c24308629662c4dd03b87167ed16` — compile against Android 17
-  - `401261220ef8d7528611dabf9edad372365f55aa` — LAN ICE host-candidate filtering and prior dependency adjustments
 
 ## Current implementation snapshot
 
@@ -46,12 +50,22 @@ Native Android LAN intercom for up to 6 participants per room. It must work over
 
 ## Latest CI status / build
 
-- Latest confirmed green CI before the newest recovery-guard change: run `44919384680` for commit `5756582a737adecaea1fa55d13b03f716a7ce5f0`; conclusion `success`.
-- That CI run covers the existing Android CI workflow. The new commit `09e0ecf519f04cd8398b1cea7f9383d03dae2372` has just been pushed; its CI result must be checked before treating the branch as green.
+- Latest confirmed green CI: run `45018179724` for commit `2130465fdd91a0ec82d7fe63143ed97846703947`; both unit tests and debug APK assembly succeeded.
+- The newer commits through `06395f2ef28d294cb42be2a88da7b2281f8d1b7d` require a fresh CI result. Do not treat the current branch as green until the latest head's unit-test and APK-assembly steps both succeed.
 - App SDK configuration: `compileSdk = 37`, `targetSdk = 35`, `minSdk = 29`.
 - CI installs `platforms;android-37.0` and `build-tools;37.0.0`.
 - Required CI tasks: `:app:testDebugUnitTest` and `:app:assembleDebug`.
 - Do not ask the user to pull until CI for the latest branch head is green and code review is complete.
+
+## Review update — 2026-11-23 (continued)
+
+- Rechecked the live branch after the previous handoff note and found its "latest CI" and branch-head details were stale; this file is being synchronized to the actual GitHub head.
+- Reviewed host promotion failure handling. Previously, a successful room-server start and host self-join could still be rolled back if the subsequent NSD advertisement threw. This is inconsistent with normal room creation, where the room remains usable and manual IP/port is offered when discovery fails.
+- Fixed promotion so NSD advertisement failure is reported as a discovery warning without tearing down the recovered host. Commit: `06395f2ef28d294cb42be2a88da7b2281f8d1b7d`.
+- Confirmed `findLocalAddress()` only starts a room on an active Wi-Fi transport and prefers a site-local IPv4 address. This does not yet guarantee that WebRTC host candidates are restricted to that Wi-Fi interface: `networkPreference = WIFI` is a preference, not a strict interface binding. Candidate/interface filtering remains a priority.
+- Host promotion still has no room epoch/fencing token; split-brain remains possible and recovery is best-effort.
+- CI run `45093387771` was still running when checked for commit `bbca70c070c1760e742fc77526b9754a1debbed6`; that run was superseded by the host-promotion fix. Check the new head's run before calling the branch green.
+- Physical-device tests remain outstanding: multi-device full-duplex audio, channel isolation, screen-off, Bluetooth PTT/routing, and host handover.
 
 ## Review update — 2026-11-23
 
