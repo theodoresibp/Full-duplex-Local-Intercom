@@ -135,7 +135,6 @@ private fun RoomSetupScreen(
             modifier = Modifier.fillMaxWidth()
         )
 
-        BluetoothPttModeSettings()
         Text("Create a room", style = MaterialTheme.typography.titleLarge)
         OutlinedTextField(
             value = state.roomName,
@@ -388,9 +387,7 @@ private fun BluetoothPttModeSettings() {
         MappingRow(context, IntercomAudioService.ACTION_NEXT_CHANNEL, "Next channel", mappingVersion) { action -> captureAction = action; IntercomAudioService.beginButtonCapture(action) }
         MappingRow(context, IntercomAudioService.ACTION_PREVIOUS_CHANNEL, "Previous channel", mappingVersion) { action -> captureAction = action; IntercomAudioService.beginButtonCapture(action) }
         TextButton(onClick = {
-            IntercomAudioService.setMappedKeyCode(context, IntercomAudioService.ACTION_PTT, android.view.KeyEvent.KEYCODE_HEADSETHOOK)
-            IntercomAudioService.setMappedKeyCode(context, IntercomAudioService.ACTION_NEXT_CHANNEL, android.view.KeyEvent.KEYCODE_MEDIA_NEXT)
-            IntercomAudioService.setMappedKeyCode(context, IntercomAudioService.ACTION_PREVIOUS_CHANNEL, android.view.KeyEvent.KEYCODE_MEDIA_PREVIOUS)
+            IntercomAudioService.resetMappedKeyCodes(context)
             mappingVersion++
             capturedMessage = "Default button mappings restored."
         }) { Text("Reset mappings") }
