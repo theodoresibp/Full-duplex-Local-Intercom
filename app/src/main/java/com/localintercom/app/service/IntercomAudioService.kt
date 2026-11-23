@@ -28,7 +28,6 @@ class IntercomAudioService : Service() {
     private var audioFocusRequest: AudioFocusRequest? = null
     private var legacyScoStarted = false
     private var headsetPttDown = false
-    private var headsetToggleActive = false
     private var audioDeviceCallback: AudioDeviceCallback? = null
 
     override fun onCreate() {
@@ -290,6 +289,9 @@ class IntercomAudioService : Service() {
         )
 
         @Volatile
+        private var headsetToggleActive = false
+
+        @Volatile
         var pttCallback: ((Boolean) -> Unit)? = null
 
         @Volatile
@@ -303,6 +305,8 @@ class IntercomAudioService : Service() {
 
         fun setBluetoothPttMode(context: Context, mode: String) {
             require(mode == BLUETOOTH_PTT_MODE_PRESS_HOLD || mode == BLUETOOTH_PTT_MODE_TOGGLE)
+            headsetToggleActive = false
+            pttCallback?.invoke(false)
             context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
                 .edit()
                 .putString(KEY_BLUETOOTH_PTT_MODE, mode)
