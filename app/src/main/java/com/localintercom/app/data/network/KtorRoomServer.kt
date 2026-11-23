@@ -257,9 +257,13 @@ internal class KtorRoomServer(
                 RoomProtocol.CHANNEL_CHANGED -> {
                     val channelId = event.payload.optString("channelId")
                     if (!IntercomChannels.contains(channelId)) continue
-                    val change = roster.updateChannel(memberId, channelId) ?: continue
-                    broadcastRoomState(change.members)
-                    onMembersChanged(change.members)
+                    roomEventsMutex.withLock {
+                        val change = roster.updateChannel(memberId, channelId)
+                        if (change != null && !closed) {
+                            broadcastRoomState(change.members)
+                            onMembersChanged(change.members)
+                        }
+                    }
                 }
                 RoomProtocol.SIGNALING -> routeSignaling(memberId, event.payload)
             }
