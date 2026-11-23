@@ -1,6 +1,6 @@
 # Project Handoff — Full-duplex Local Intercom
 
-Last updated: 2026-11-22
+Last updated: 2026-11-23
 
 ## Purpose
 
@@ -52,6 +52,14 @@ Native Android LAN intercom for up to 6 participants per room. It must work over
 - CI installs `platforms;android-37.0` and `build-tools;37.0.0`.
 - Required CI tasks: `:app:testDebugUnitTest` and `:app:assembleDebug`.
 - Do not ask the user to pull until CI for the latest branch head is green and code review is complete.
+
+## Review update — 2026-11-23
+
+- Latest code review found a WebRTC peer-registration race: the offer coroutine could start inside `createPeer()` before `ConcurrentHashMap.computeIfAbsent` had inserted the peer. A fast remote response could then be dropped because the incoming signal worker could not find the peer. Fixed by starting the offer only after peer registration, with a per-peer atomic one-shot guard. Commit: `523845d61b83c2be7b043207fb0660436a3b7ae8`.
+- Serialized server-side `CHANNEL_CHANGED` roster mutation and its room-state broadcast under `roomEventsMutex`, matching join/remove/heartbeat event ordering. Commit: `0e60596bf257fd5f67abfb153720c25c77a00104`.
+- The branch head is now `0e60596bf257fd5f67abfb153720c25c77a00104`. CI run `45093289346` is in progress; do not treat the branch as green until its unit-test and APK-assembly steps succeed.
+- Updated `docs/TEST_PLAN.md`: basic host-disconnect recovery exists, but recovery from transient Wi-Fi interruption remains unvalidated.
+- Current remaining review priorities: strict Wi-Fi-only ICE candidate/interface handling; host-promotion rollback and split-brain limitations; Android foreground microphone service and headset routing behavior; physical-device testing. No physical audio or failover test has been run.
 
 ## Review update — 2026-11-22
 
