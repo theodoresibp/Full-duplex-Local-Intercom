@@ -357,6 +357,18 @@ class IntercomAudioService : Service() {
             }
         }
 
+        fun resetMappedKeyCodes(context: Context) {
+            context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+                .edit()
+                .putInt(KEY_PTT_KEYCODE, KeyEvent.KEYCODE_HEADSETHOOK)
+                .putInt(KEY_NEXT_KEYCODE, KeyEvent.KEYCODE_MEDIA_NEXT)
+                .putInt(KEY_PREVIOUS_KEYCODE, KeyEvent.KEYCODE_MEDIA_PREVIOUS)
+                .apply()
+            headsetPttDown = false
+            headsetToggleActive = false
+            pttCallback?.invoke(false)
+        }
+
         fun beginButtonCapture(action: String) {
             require(action in setOf(ACTION_PTT, ACTION_NEXT_CHANNEL, ACTION_PREVIOUS_CHANNEL))
             captureTarget = action
