@@ -138,6 +138,7 @@ class KtorRoomRepository(context: Context) : RoomRepository {
                 val session = hostSession.copy(joinToken = joinToken)
                 _activeRoom.value = session
                 startAudioMesh(session, createdHostClient)
+                createdHostClient.startReceiving(session)
 
                 try {
                     nsd.publish(session)
@@ -245,6 +246,7 @@ class KtorRoomRepository(context: Context) : RoomRepository {
                 client = roomClient
                 _activeRoom.value = joinedRoom
                 startAudioMesh(joinedRoom, roomClient)
+                roomClient.startReceiving(joinedRoom)
             } catch (cancelled: CancellationException) {
                 isLeavingRoom = true
                 runCatching { roomClient.leave() }
@@ -429,6 +431,7 @@ class KtorRoomRepository(context: Context) : RoomRepository {
             )
             _activeRoom.value = session
             startAudioMesh(session, hostClient)
+            hostClient.startReceiving(session)
             _discoveryState.value = DiscoveryState(message = "Host signaling connection restored.")
         }
     }
@@ -521,6 +524,7 @@ class KtorRoomRepository(context: Context) : RoomRepository {
             )
             _activeRoom.value = session
             startAudioMesh(session, newClient)
+            newClient.startReceiving(session)
             _discoveryState.value = DiscoveryState(message = "Reconnected to the replacement room host.")
         }
     }
@@ -572,6 +576,7 @@ class KtorRoomRepository(context: Context) : RoomRepository {
                 )
                 _activeRoom.value = session
                 startAudioMesh(session, hostClient)
+                hostClient.startReceiving(session)
                 try {
                     nsd.publish(session)
                     _discoveryState.value = DiscoveryState(message = "You are now hosting the recovered room.")
