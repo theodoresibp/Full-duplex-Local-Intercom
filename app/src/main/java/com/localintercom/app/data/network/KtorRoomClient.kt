@@ -92,12 +92,19 @@ internal class KtorRoomClient(
             )
             session = socket
             onSessionUpdated(joinedRoom)
-            receiveJob = scope.launch(Dispatchers.IO) { receiveEvents(socket, joinedRoom) }
+            // The repository must create the audio mesh before processing incoming SDP/ICE.
+            // Frames arriving meanwhile remain queued by the WebSocket incoming channel.
             return joinedRoom
         } catch (error: Throwable) {
             runCatching { socket.close(CloseReason(CloseReason.Codes.GOING_AWAY, "Join failed.")) }
             throw error
         }
+    }
+
+    fun startReceiving(initialRoom: RoomSession) {
+        val socket = session ?: throw IllegalStateException("Join the room before starting its event receiver.")
+        check(receiveJob?.isActive != true) { "The room event receiver is already running." }
+        receiveJob = scope.launch(Dispatchers.IO) { receiveEvents(socket, initialRoom) }
     }
 
     private suspend fun receiveEvents(
