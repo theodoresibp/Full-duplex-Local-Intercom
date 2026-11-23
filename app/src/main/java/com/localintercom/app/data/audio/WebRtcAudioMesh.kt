@@ -25,6 +25,7 @@ import org.webrtc.RtpTransceiver
 import org.webrtc.SdpObserver
 import org.webrtc.SessionDescription
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
@@ -94,6 +95,7 @@ internal class WebRtcAudioMesh(
             val peer = peers.computeIfAbsent(member.id) { createPeer(member) }
             peer.member = member
             peer.remoteAudioTrack?.setEnabled(member.channelId == selectedChannelId)
+            startOfferIfNeeded(peer)
         }
         onStatusChanged(peers.values.count { it.connected })
     }
@@ -102,7 +104,9 @@ internal class WebRtcAudioMesh(
         if (closed || memberId == localMemberId) return
         val member = knownMembers[memberId] ?: return
         removePeer(memberId)
-        peers[memberId] = createPeer(member)
+        val peer = createPeer(member)
+        peers[memberId] = peer
+        startOfferIfNeeded(peer)
         onStatusChanged(peers.values.count { it.connected })
     }
 
@@ -239,10 +243,16 @@ internal class WebRtcAudioMesh(
             ?: throw IllegalStateException("Could not create a WebRTC peer connection.")
         peer = Peer(member, connection)
         connection.addTrack(localAudioTrack, listOf("local-intercom"))
-        if (localMemberId < member.id) {
-            scope.launch(Dispatchers.IO) { negotiateOffer(peer) }
-        }
         return peer
+    }
+
+    private fun startOfferIfNeeded(peer: Peer) {
+        if (localMemberId >= peer.member.id || !peer.offerStarted.compareAndSet(false, true)) return
+        scope.launch(Dispatchers.IO) {
+            if (!closed && peers[peer.member.id] === peer) {
+                runCatching { negotiateOffer(peer) }
+            }
+        }
     }
 
     private suspend fun negotiateOffer(peer: Peer) {
@@ -371,6 +381,7 @@ internal class WebRtcAudioMesh(
         var remoteDescriptionSet: Boolean = false,
         var remoteAudioTrack: AudioTrack? = null,
         val pendingCandidates: MutableList<IceCandidate> = mutableListOf(),
+        val offerStarted: AtomicBoolean = AtomicBoolean(false),
         val localSignalLock: Any = Any(),
         var localDescriptionSignaled: Boolean = false,
         val pendingLocalCandidates: MutableList<JSONObject> = mutableListOf()
