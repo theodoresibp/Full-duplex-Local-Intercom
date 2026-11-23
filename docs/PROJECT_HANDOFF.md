@@ -160,3 +160,15 @@ On Windows:
 - This is implementation only; actual compatibility varies by headset firmware and still requires physical-device testing. Some headphones may consume the button for their own assistant/player and never forward an event to Android.
 - Commits: service mode handling 871bfbd72ad6e25c5dd0308bf787e4078a5c2726; UI setting 51d2ab2366df9cb566b6d9146911c2fb1e0f5bc9; transmit-state reset on mode change 0e77493b77cf16942e749bf34c8b33bdd4e34a4f.
 - CI for the latest feature commit is pending at the time of this note; verify the latest branch-head run before considering the feature build-verified.
+
+
+## Custom Bluetooth button mapping — 2026-11-23
+
+- Added per-device persistent keycode mappings for PTT transmit, Next Channel, and Previous Channel.
+- The setup and active-room screens expose a Listen for Button dialog. A received Android media-button event is captured and assigned to the selected action.
+- Mapping defaults preserve the standard headset hook and media next/previous keys. Default PTT still accepts the common headset hook / media play-pause / play / pause keycodes; a custom PTT mapping adds the selected key.
+- Duplicate key assignments are rejected with UI feedback. Reset mappings restores defaults.
+- Existing Press & Hold / Toggle mode applies to the mapped PTT key.
+- Important platform limitation: capture only sees key events delivered to this app's active MediaSession. Headset buttons consumed by firmware, vendor apps, voice assistants, or transport callbacks that do not expose a keycode cannot be custom-mapped. Physical-device testing is required.
+- Commits: mapping capture and dispatch 2fd97a806e6419e3687c10647eebceb1013b2449; fix companion-state reset d047a828e5202d12aa84c18971c79a92a125801b; mapping UI 22cdec43280519e35fa70cc7a863bd00e7e2a869; UI state refinement 8fac9a9dbcbe2dd44511a58c4cdb305b2f788ab4; duplicate prevention 7433a66ffbf73743760997ab2f46c706ac0d3407; collision feedback 74080a5a55e0b734c38076faae8dba9b2b46da68.
+- CI for latest feature commits must be checked before handing off an installable APK.
