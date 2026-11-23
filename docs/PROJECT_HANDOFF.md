@@ -147,3 +147,16 @@ On Windows:
 ```powershell
 .\gradlew.bat :app:testDebugUnitTest :app:assembleDebug
 ```
+
+
+## Bluetooth PTT mode setting — 2026-11-23
+
+- Added a persistent Bluetooth headset button mode setting to the setup screen and active-room screen.
+- **Press & Hold** mode: headset media-button ACTION_DOWN starts transmission and ACTION_UP mutes.
+- **Toggle** mode: first button press starts transmission; next press mutes. ACTION_UP is ignored so click-only headsets can still use the button.
+- The on-screen PTT control remains Press & Hold regardless of the Bluetooth setting.
+- Mode is stored in app SharedPreferences and defaults to Press & Hold. Changing the setting clears any active transmit state.
+- MediaSession onPlay/onPause callbacks are also handled for headsets that dispatch transport callbacks rather than raw media-button events.
+- This is implementation only; actual compatibility varies by headset firmware and still requires physical-device testing. Some headphones may consume the button for their own assistant/player and never forward an event to Android.
+- Commits: service mode handling 871bfbd72ad6e25c5dd0308bf787e4078a5c2726; UI setting 51d2ab2366df9cb566b6d9146911c2fb1e0f5bc9; transmit-state reset on mode change 0e77493b77cf16942e749bf34c8b33bdd4e34a4f.
+- CI for the latest feature commit is pending at the time of this note; verify the latest branch-head run before considering the feature build-verified.
