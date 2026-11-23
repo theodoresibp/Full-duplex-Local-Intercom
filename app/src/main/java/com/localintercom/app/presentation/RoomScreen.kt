@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -336,7 +337,6 @@ private fun BluetoothPttModeSettings() {
     var mappingVersion by remember { mutableStateOf(0) }
 
     DisposableEffect(Unit) {
-        captureVersionCallback = { action -> captureAction = action }
         IntercomAudioService.onButtonCaptured = { action, keyCode ->
             capturedMessage = "${actionLabel(action)} mapped to ${IntercomAudioService.keyCodeLabel(keyCode)}"
             captureAction = null
@@ -345,7 +345,6 @@ private fun BluetoothPttModeSettings() {
         onDispose {
             IntercomAudioService.cancelButtonCapture()
             IntercomAudioService.onButtonCaptured = null
-            captureVersionCallback = null
         }
     }
 
@@ -380,9 +379,9 @@ private fun BluetoothPttModeSettings() {
 
         Text("Button mapping", style = MaterialTheme.typography.titleSmall)
         Text("Mapped keys are saved on this device.", style = MaterialTheme.typography.bodySmall)
-        MappingRow(context, IntercomAudioService.ACTION_PTT, "PTT (Transmit)")
-        MappingRow(context, IntercomAudioService.ACTION_NEXT_CHANNEL, "Next channel")
-        MappingRow(context, IntercomAudioService.ACTION_PREVIOUS_CHANNEL, "Previous channel")
+        MappingRow(context, IntercomAudioService.ACTION_PTT, "PTT (Transmit)", mappingVersion) { action -> captureAction = action; IntercomAudioService.beginButtonCapture(action) }
+        MappingRow(context, IntercomAudioService.ACTION_NEXT_CHANNEL, "Next channel", mappingVersion) { action -> captureAction = action; IntercomAudioService.beginButtonCapture(action) }
+        MappingRow(context, IntercomAudioService.ACTION_PREVIOUS_CHANNEL, "Previous channel", mappingVersion) { action -> captureAction = action; IntercomAudioService.beginButtonCapture(action) }
         TextButton(onClick = {
             IntercomAudioService.setMappedKeyCode(context, IntercomAudioService.ACTION_PTT, android.view.KeyEvent.KEYCODE_HEADSETHOOK)
             IntercomAudioService.setMappedKeyCode(context, IntercomAudioService.ACTION_NEXT_CHANNEL, android.view.KeyEvent.KEYCODE_MEDIA_NEXT)
@@ -412,7 +411,7 @@ private fun BluetoothPttModeSettings() {
 }
 
 @Composable
-private fun MappingRow(context: android.content.Context, action: String, label: String) {
+private fun MappingRow(context: android.content.Context, action: String, label: String, version: Int, onMap: (String) -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -427,14 +426,10 @@ private fun MappingRow(context: android.content.Context, action: String, label: 
                 style = MaterialTheme.typography.bodySmall
             )
         }
-        TextButton(onClick = {
-            IntercomAudioService.beginButtonCapture(action)
-            captureVersionCallback?.invoke(action)
-        }) { Text("Map") }
+        TextButton(onClick = { onMap(action) }) { Text("Map") }
     }
 }
 
-private var captureVersionCallback: ((String) -> Unit)? = null
 
 private fun actionLabel(action: String): String = when (action) {
     IntercomAudioService.ACTION_PTT -> "PTT"
