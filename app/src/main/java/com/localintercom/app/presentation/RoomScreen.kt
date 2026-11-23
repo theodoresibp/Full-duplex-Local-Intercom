@@ -342,9 +342,14 @@ private fun BluetoothPttModeSettings() {
             captureAction = null
             mappingVersion++
         }
+        IntercomAudioService.onButtonCaptureRejected = { action, keyCode ->
+            capturedMessage = "${IntercomAudioService.keyCodeLabel(keyCode)} is already assigned. Choose a different button for ${actionLabel(action)}."
+            captureAction = null
+        }
         onDispose {
             IntercomAudioService.cancelButtonCapture()
             IntercomAudioService.onButtonCaptured = null
+            IntercomAudioService.onButtonCaptureRejected = null
         }
     }
 
@@ -411,7 +416,7 @@ private fun BluetoothPttModeSettings() {
 }
 
 @Composable
-private fun MappingRow(context: android.content.Context, action: String, label: String, version: Int, onMap: (String) -> Unit) {
+private fun MappingRow(context: android.content.Context, action: String, label: String, @Suppress("UNUSED_PARAMETER") version: Int, onMap: (String) -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
