@@ -50,13 +50,21 @@ Native Android LAN intercom for up to 6 participants per room. It must work over
 
 ## Latest CI status / build
 
-- Latest confirmed green CI remains run `45018179724` for commit `2130465fdd91a0ec82d7fe63143ed97846703947`; both unit tests and debug APK assembly succeeded.
-- Code head `a56224375d531406b0e1a8d593f826e1b9bc8d61` contains the initial-join WebRTC receive-ordering fix and still requires a fresh CI result. The handoff refresh itself will create a documentation-only commit and trigger another CI run; check the newest branch-head run before declaring green.
-- Do not treat the current branch as green until the latest head's unit-test and APK-assembly steps both succeed.
+- Latest confirmed green CI for code changes: run `45093962949` for commit `b88f691bb8057cdbe0cbe425d52001cc9c2c9bd6`; unit tests and debug APK assembly succeeded.
+- Current branch head `452dafda148ac190cb7552b55a2d6b7ea2848930` adds CI APK artifact upload and is awaiting validation (run `45139094705`).
+- Artifact name: `local-intercom-debug-apk`, retention 14 days, expected file `app-debug.apk`.
+- Do not treat the current branch as green until the latest head's unit-test, APK-assembly, and artifact-upload steps all succeed.
 - App SDK configuration: `compileSdk = 37`, `targetSdk = 35`, `minSdk = 29`.
 - CI installs `platforms;android-37.0` and `build-tools;37.0.0`.
 - Required CI tasks: `:app:testDebugUnitTest` and `:app:assembleDebug`.
 - Do not ask the user to pull until CI for the latest branch head is green and code review is complete.
+
+## Review update — 2026-11-23 (CI artifact delivery)
+
+- Latest confirmed green code CI is run `45093962949` for `b88f691bb8057cdbe0cbe425d52001cc9c2c9bd6`; both `:app:testDebugUnitTest` and `:app:assembleDebug` succeeded.
+- Added `actions/upload-artifact@v4` to Android CI. On successful build, CI publishes `app/build/outputs/apk/debug/app-debug.apk` as artifact `local-intercom-debug-apk` for 14 days.
+- Workflow change commit: `452dafda148ac190cb7552b55a2d6b7ea2848930`. CI run `45139094705` is queued/running for this head and must succeed before the APK artifact is available.
+- Do not give the user an artifact download path until the new run succeeds and the artifact is confirmed in that run's artifacts endpoint.
 
 ## Review update — 2026-11-23 (WebRTC join ordering)
 
