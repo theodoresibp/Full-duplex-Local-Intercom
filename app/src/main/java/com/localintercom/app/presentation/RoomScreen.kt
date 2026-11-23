@@ -52,6 +52,7 @@ import com.localintercom.app.domain.model.RoomConnectionStatus
 import com.localintercom.app.domain.model.RoomMember
 import com.localintercom.app.domain.model.RoomSession
 import com.localintercom.app.domain.model.RoomStatus
+import com.localintercom.app.service.IntercomAudioService
 
 @Composable
 fun RoomApp(viewModel: RoomViewModel) {
@@ -131,6 +132,7 @@ private fun RoomSetupScreen(
             modifier = Modifier.fillMaxWidth()
         )
 
+        BluetoothPttModeSettings()
         Text("Create a room", style = MaterialTheme.typography.titleLarge)
         OutlinedTextField(
             value = state.roomName,
@@ -255,6 +257,7 @@ private fun ActiveRoomScreen(room: RoomSession, state: RoomScreenState, viewMode
         Text(room.roomName, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
         Text("Connection: ${room.connectionStatus.label()}", style = MaterialTheme.typography.titleMedium)
         Text("Host: ${room.hostName}")
+        BluetoothPttModeSettings()
         Text("Members: ${room.members.size}/6 · ${room.status.label()}")
         Text("Host address: ${room.hostAddress.endpoint(room.port)}", style = MaterialTheme.typography.bodyMedium)
         Text(state.discoveryState.message, style = MaterialTheme.typography.bodySmall)
@@ -316,6 +319,44 @@ private fun ActiveRoomScreen(room: RoomSession, state: RoomScreenState, viewMode
             Text(if (room.isHost) "Leave and close room" else "Leave room")
         }
         if (state.isBusy) CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
+    }
+}
+
+
+@Composable
+private fun BluetoothPttModeSettings() {
+    val context = LocalContext.current
+    var selectedMode by remember {
+        mutableStateOf(IntercomAudioService.getBluetoothPttMode(context))
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text("Bluetooth headset button", style = MaterialTheme.typography.titleMedium)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(
+                selected = selectedMode == IntercomAudioService.BLUETOOTH_PTT_MODE_PRESS_HOLD,
+                onClick = {
+                    selectedMode = IntercomAudioService.BLUETOOTH_PTT_MODE_PRESS_HOLD
+                    IntercomAudioService.setBluetoothPttMode(context, selectedMode)
+                },
+                label = { Text("Press & Hold") }
+            )
+            FilterChip(
+                selected = selectedMode == IntercomAudioService.BLUETOOTH_PTT_MODE_TOGGLE,
+                onClick = {
+                    selectedMode = IntercomAudioService.BLUETOOTH_PTT_MODE_TOGGLE
+                    IntercomAudioService.setBluetoothPttMode(context, selectedMode)
+                },
+                label = { Text("Toggle") }
+            )
+        }
+        Text(
+            if (selectedMode == IntercomAudioService.BLUETOOTH_PTT_MODE_PRESS_HOLD) {
+                "Hold the headset button to talk; release it to mute."
+            } else {
+                "Press once to talk; press again to mute. Works with headsets that send click-style media buttons."
+            },
+            style = MaterialTheme.typography.bodySmall
+        )
     }
 }
 
