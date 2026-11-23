@@ -50,12 +50,22 @@ Native Android LAN intercom for up to 6 participants per room. It must work over
 
 ## Latest CI status / build
 
-- Latest confirmed green CI: run `45018179724` for commit `2130465fdd91a0ec82d7fe63143ed97846703947`; both unit tests and debug APK assembly succeeded.
-- The newer commits through `06395f2ef28d294cb42be2a88da7b2281f8d1b7d` require a fresh CI result. Do not treat the current branch as green until the latest head's unit-test and APK-assembly steps both succeed.
+- Latest confirmed green CI remains run `45018179724` for commit `2130465fdd91a0ec82d7fe63143ed97846703947`; both unit tests and debug APK assembly succeeded.
+- Code head `a56224375d531406b0e1a8d593f826e1b9bc8d61` contains the initial-join WebRTC receive-ordering fix and still requires a fresh CI result. The handoff refresh itself will create a documentation-only commit and trigger another CI run; check the newest branch-head run before declaring green.
+- Do not treat the current branch as green until the latest head's unit-test and APK-assembly steps both succeed.
 - App SDK configuration: `compileSdk = 37`, `targetSdk = 35`, `minSdk = 29`.
 - CI installs `platforms;android-37.0` and `build-tools;37.0.0`.
 - Required CI tasks: `:app:testDebugUnitTest` and `:app:assembleDebug`.
 - Do not ask the user to pull until CI for the latest branch head is green and code review is complete.
+
+## Review update — 2026-11-23 (WebRTC join ordering)
+
+- Found an initial-join race: `KtorRoomClient.join()` started its receive coroutine before the repository created `WebRtcAudioMesh`. Existing peers could send an SDP offer immediately after a member joined; the new device could drop that offer because its mesh was still null. This could leave the peer connection unnegotiated.
+- Changed the lifecycle so `join()` authenticates and stores the socket but does not consume room events yet. The repository now creates/synchronizes the audio mesh and then explicitly calls `startReceiving(room)`. Applied to all five paths: initial host socket, guest join, host signaling reconnect, participant rejoin after host handover, and promoted host socket.
+- Commits: `5a87a08d137e7515edd354fc1f2f157afaf763a5` and `a56224375d531406b0e1a8d593f826e1b9bc8d61`.
+- WebSocket frames received during mesh initialization remain queued in the socket's incoming channel and are processed once the receiver starts. Verify this assumption on device and through the CI build.
+- Current code head before this handoff refresh: `a56224375d531406b0e1a8d593f826e1b9bc8d61`. CI for this head is pending; the previous run for `c0cb0927e5f961efbb628627400631d8a9ea4427` was still running and does not validate these changes.
+- Remaining priorities: strict Wi-Fi-only ICE candidate/interface filtering; host epoch/fencing and split-brain protection; physical multi-device audio, channel, screen-off, Bluetooth and failover tests.
 
 ## Review update — 2026-11-23 (continued)
 
