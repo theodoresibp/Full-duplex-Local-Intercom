@@ -572,8 +572,16 @@ class KtorRoomRepository(context: Context) : RoomRepository {
                 )
                 _activeRoom.value = session
                 startAudioMesh(session, hostClient)
-                nsd.publish(session)
-                _discoveryState.value = DiscoveryState(message = "You are now hosting the recovered room.")
+                try {
+                    nsd.publish(session)
+                    _discoveryState.value = DiscoveryState(message = "You are now hosting the recovered room.")
+                } catch (discoveryError: Throwable) {
+                    // The recovered host is already serving the room; discovery failure must not
+                    // tear down a valid room. Participants can still use the manual IP/port path.
+                    _discoveryState.value = DiscoveryState(
+                        message = "You are hosting the recovered room, but LAN advertisement failed: ${discoveryError.message ?: "unknown error"}. Participants may need to rejoin manually."
+                    )
+                }
             } catch (error: Throwable) {
                 runCatching { hostClient.leave() }
                 client = null
