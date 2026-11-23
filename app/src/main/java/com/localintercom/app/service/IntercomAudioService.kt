@@ -28,6 +28,7 @@ class IntercomAudioService : Service() {
     private var audioFocusRequest: AudioFocusRequest? = null
     private var legacyScoStarted = false
     private var headsetPttDown = false
+    private var headsetToggleActive = false
     private var audioDeviceCallback: AudioDeviceCallback? = null
 
     override fun onCreate() {
@@ -166,22 +167,35 @@ class IntercomAudioService : Service() {
                         KeyEvent.ACTION_DOWN -> {
                             if (event.repeatCount == 0 && !headsetPttDown) {
                                 headsetPttDown = true
-                                pttCallback?.invoke(true)
+                                if (getBluetoothPttMode(this@IntercomAudioService) == BLUETOOTH_PTT_MODE_TOGGLE) {
+                                    headsetToggleActive = !headsetToggleActive
+                                    pttCallback?.invoke(headsetToggleActive)
+                                } else {
+                                    pttCallback?.invoke(true)
+                                }
                             }
                         }
                         KeyEvent.ACTION_UP -> {
                             headsetPttDown = false
-                            pttCallback?.invoke(false)
+                            if (getBluetoothPttMode(this@IntercomAudioService) == BLUETOOTH_PTT_MODE_PRESS_HOLD) {
+                                pttCallback?.invoke(false)
+                            }
                         }
                     }
                     return true
                 }
 
                 override fun onPlay() {
-                    pttCallback?.invoke(true)
+                    if (getBluetoothPttMode(this@IntercomAudioService) == BLUETOOTH_PTT_MODE_TOGGLE) {
+                        headsetToggleActive = !headsetToggleActive
+                        pttCallback?.invoke(headsetToggleActive)
+                    } else {
+                        pttCallback?.invoke(true)
+                    }
                 }
 
                 override fun onPause() {
+                    headsetToggleActive = false
                     pttCallback?.invoke(false)
                 }
 
@@ -231,6 +245,7 @@ class IntercomAudioService : Service() {
     override fun onDestroy() {
         pttCallback?.invoke(false)
         headsetPttDown = false
+        headsetToggleActive = false
         audioDeviceCallback?.let(audioManager::unregisterAudioDeviceCallback)
         audioDeviceCallback = null
         mediaSession?.run {
@@ -261,6 +276,10 @@ class IntercomAudioService : Service() {
     companion object {
         const val ACTION_START = "com.localintercom.app.action.START_AUDIO"
         const val ACTION_STOP = "com.localintercom.app.action.STOP_AUDIO"
+        const val BLUETOOTH_PTT_MODE_PRESS_HOLD = "press_hold"
+        const val BLUETOOTH_PTT_MODE_TOGGLE = "toggle"
+        private const val PREFERENCES_NAME = "intercom_preferences"
+        private const val KEY_BLUETOOTH_PTT_MODE = "bluetooth_ptt_mode"
         private const val CHANNEL_ID = "local_intercom_audio"
         private const val NOTIFICATION_ID = 4106
         private val SUPPORTED_PTT_KEYS = setOf(
@@ -275,6 +294,20 @@ class IntercomAudioService : Service() {
 
         @Volatile
         var channelStepCallback: ((Int) -> Unit)? = null
+
+        fun getBluetoothPttMode(context: Context): String =
+            context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+                .getString(KEY_BLUETOOTH_PTT_MODE, BLUETOOTH_PTT_MODE_PRESS_HOLD)
+                ?.takeIf { it == BLUETOOTH_PTT_MODE_TOGGLE }
+                ?: BLUETOOTH_PTT_MODE_PRESS_HOLD
+
+        fun setBluetoothPttMode(context: Context, mode: String) {
+            require(mode == BLUETOOTH_PTT_MODE_PRESS_HOLD || mode == BLUETOOTH_PTT_MODE_TOGGLE)
+            context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+                .edit()
+                .putString(KEY_BLUETOOTH_PTT_MODE, mode)
+                .apply()
+        }
 
         fun start(context: Context) {
             val intent = Intent(context, IntercomAudioService::class.java).setAction(ACTION_START)
