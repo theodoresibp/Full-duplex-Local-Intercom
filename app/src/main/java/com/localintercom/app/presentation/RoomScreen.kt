@@ -352,7 +352,7 @@ private fun BluetoothPttModeSettings() {
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text("Bluetooth headset button", style = MaterialTheme.typography.titleMedium)
+        Text("Headset physical button", style = MaterialTheme.typography.titleMedium)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             FilterChip(
                 selected = selectedMode == IntercomAudioService.BLUETOOTH_PTT_MODE_PRESS_HOLD,
@@ -400,7 +400,7 @@ private fun BluetoothPttModeSettings() {
                 captureAction = null
             },
             title = { Text("Listen for button") },
-            text = { Text("Press the physical button on your Bluetooth headset now. Only buttons forwarded to Android can be detected.") },
+            text = { Text("Press the physical button on your wired or Bluetooth headset now. Only buttons forwarded to Android can be detected.") },
             confirmButton = {
                 TextButton(onClick = {
                     IntercomAudioService.cancelButtonCapture()
