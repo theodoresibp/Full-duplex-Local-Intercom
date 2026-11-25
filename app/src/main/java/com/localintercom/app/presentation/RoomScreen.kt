@@ -118,9 +118,9 @@ fun RoomApp(viewModel: RoomViewModel) {
                 RoomSetupScreen(
                     state = state,
                     viewModel = viewModel,
-                    onCreateRoom = { runWithMicrophonePermission(viewModel::createRoom) },
-                    onJoinSelectedRoom = { runWithMicrophonePermission(viewModel::joinSelectedRoom) },
-                    onJoinManualRoom = { runWithMicrophonePermission(viewModel::joinManualRoom) }
+                    onCreateRoom = { if (viewModel.validateDisplayName()) runWithMicrophonePermission(viewModel::createRoom) },
+                    onJoinSelectedRoom = { if (viewModel.validateDisplayName()) runWithMicrophonePermission(viewModel::joinSelectedRoom) },
+                    onJoinManualRoom = { if (viewModel.validateDisplayName()) runWithMicrophonePermission(viewModel::joinManualRoom) }
                 )
             } else {
                 ActiveRoomScreen(room, state, viewModel)
