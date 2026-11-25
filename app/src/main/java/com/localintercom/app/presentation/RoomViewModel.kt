@@ -29,7 +29,8 @@ data class RoomScreenState(
     val discoveryState: DiscoveryState = DiscoveryState(),
     val activeRoom: RoomSession? = null,
     val isBusy: Boolean = false,
-    val message: String? = null
+    val message: String? = null,
+    val displayNameError: String? = null
 )
 
 class RoomViewModel(private val repository: RoomRepository) : ViewModel() {
@@ -59,7 +60,22 @@ class RoomViewModel(private val repository: RoomRepository) : ViewModel() {
         repository.refreshDiscovery()
     }
 
-    fun onDisplayNameChanged(value: String) = _state.update { it.copy(displayName = value, message = null) }
+    fun onDisplayNameChanged(value: String) = _state.update {
+        it.copy(displayName = value, message = null, displayNameError = null)
+    }
+
+    fun validateDisplayName(): Boolean {
+        val name = _state.value.displayName.trim()
+        val error = when {
+            name.isEmpty() -> "Please enter your name before continuing."
+            name.length !in 2..24 -> "Your name must be 2–24 characters."
+            else -> null
+        }
+        _state.update { it.copy(displayNameError = error) }
+        return error == null
+    }
+
+    fun clearMessage() = _state.update { it.copy(message = null) }
     fun onRoomNameChanged(value: String) = _state.update { it.copy(roomName = value, message = null) }
     fun onSessionTokenChanged(value: String) = _state.update { it.copy(sessionToken = value, message = null) }
     fun onManualHostChanged(value: String) = _state.update { it.copy(manualHostAddress = value, message = null) }
@@ -67,26 +83,33 @@ class RoomViewModel(private val repository: RoomRepository) : ViewModel() {
     fun selectRoom(room: DiscoveredRoom) = _state.update { it.copy(selectedRoom = room, message = null) }
     fun refreshDiscovery() = repository.refreshDiscovery()
 
-    fun createRoom() = launchOperation {
-        createRoom(_state.value.roomName, _state.value.displayName)
+    fun createRoom() {
+        if (!validateDisplayName()) return
+        launchOperation { createRoom(_state.value.roomName, _state.value.displayName) }
     }
 
-    fun joinSelectedRoom() = launchOperation {
-        val snapshot = _state.value
-        val room = snapshot.selectedRoom ?: throw IllegalArgumentException("Select a room from the discovery list first.")
-        joinDiscoveredRoom(room, snapshot.displayName, snapshot.sessionToken)
+    fun joinSelectedRoom() {
+        if (!validateDisplayName()) return
+        launchOperation {
+            val snapshot = _state.value
+            val room = snapshot.selectedRoom ?: throw IllegalArgumentException("Select a room from the discovery list first.")
+            joinDiscoveredRoom(room, snapshot.displayName, snapshot.sessionToken)
+        }
     }
 
-    fun joinManualRoom() = launchOperation {
-        val snapshot = _state.value
-        val port = snapshot.manualPort.toIntOrNull()
-            ?: throw IllegalArgumentException("Enter the host port.")
-        joinManualRoom(
-            snapshot.manualHostAddress,
-            port,
-            snapshot.displayName,
-            snapshot.sessionToken
-        )
+    fun joinManualRoom() {
+        if (!validateDisplayName()) return
+        launchOperation {
+            val snapshot = _state.value
+            val port = snapshot.manualPort.toIntOrNull()
+                ?: throw IllegalArgumentException("Enter the host port.")
+            joinManualRoom(
+                snapshot.manualHostAddress,
+                port,
+                snapshot.displayName,
+                snapshot.sessionToken
+            )
+        }
     }
 
     fun selectChannel(channelId: String) = launchOperation {
