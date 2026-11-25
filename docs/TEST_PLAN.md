@@ -12,8 +12,8 @@ CI unit tests cover room rules, six-member capacity, membership removal, and cha
 | TC-06 | PTT | Implemented in UI/audio track; device test pending | Local microphone is sent only while PTT is active |
 | TC-07 | Channel isolation | Implemented as receiver-side track gating; device test pending | Only the selected channel is played |
 | TC-08 | Screen off | Foreground service implemented; device test pending | Existing session continues with screen locked |
-| TC-09 | Headset PTT | Partial | Supported headset key-down/key-up controls PTT; click-only headset fallback remains unimplemented |
-| TC-10 | Headset routing | Basic routing implemented; reconnect test pending | Audio moves correctly on headset connect/disconnect/reconnect |
+| TC-09 | Headset PTT | Partially device-tested | Wired inline-button PTT works in Toggle mode on the user's test device; Press & Hold did not work. Bluetooth TWS physical-button behavior remains untested; on-screen PTT works. Click-only/key-up behavior varies by headset and needs further validation |
+| TC-10 | Headset routing | Initial wired and Bluetooth TWS audio paths device-tested; reconnect test pending | Two-device communication worked with one wired headset and one Bluetooth TWS; reconnect and route-switch behavior still need validation |
 | TC-11 | Network recovery | Basic host-disconnect recovery implemented; transient Wi-Fi interruption not validated | Session recovers after a supported host reconnect or reports a clear failure |
 | TC-12 | Host loss | Basic deterministic handover implemented; device test pending | New coordinator is elected and room state is restored after heartbeat timeout |
 | TC-13 | Security | Partial | Media is encrypted and unauthorized room/signaling targets are rejected; signaling WebSocket is still cleartext on the LAN |
@@ -31,3 +31,11 @@ CI unit tests cover room rules, six-member capacity, membership removal, and cha
 ## Metrics
 
 Record device model, Android version, Wi-Fi band, RSSI, participant count, active speakers, median/p95 end-to-end latency, packet loss, jitter, CPU, battery drain and thermal state.
+
+
+## User device-test notes — 2026-11-25
+
+- Two Android devices successfully communicated over the local Wi-Fi room.
+- Device A used a wired headset with an inline physical button. PTT worked in Toggle mode; Press & Hold did not work on this headset.
+- Device B used Bluetooth TWS. PTT was operated using the in-app on-screen control; the TWS physical touch/button has not yet been tested for media-key delivery.
+- This confirms a successful initial two-device audio path, but does not yet verify simultaneous full-duplex speaking, channel isolation, screen-off operation, Bluetooth physical-button mapping, reconnect, or host failover.
