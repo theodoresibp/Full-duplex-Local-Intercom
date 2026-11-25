@@ -174,3 +174,15 @@ On Windows:
 - CI for latest feature commits must be checked before handing off an installable APK.
 
 - Follow-up hardening: key mappings now reject duplicate assignments; capture reports a conflict instead of replacing an existing action. Reset restores all three defaults atomically. The mapping controls are shown only inside an active room because the MediaSession capture listener is owned by the foreground audio service. Latest UI/service commits: d7d71ad3e6ba45c51904362e517dfc1039d43b73 and e54c175cadfdce1c4517d2cf21e6c7b3662ebfb8.
+
+
+## User device-test update — 2026-11-25
+
+- Latest branch head at this update: `024677cd78fbee45ac78e3fdc435080e009c178a`.
+- Previous artifact-producing CI for `85b1442f0f1232a8cd2a998f9ed13f592464dcb3` succeeded (run `45152555231`); artifact `local-intercom-debug-apk` was uploaded and has since been provided to the user for initial testing.
+- User confirmed two Android devices communicated successfully over the same local Wi-Fi room. One used a wired headset with inline button: Toggle PTT worked, Press & Hold did not. The other used Bluetooth TWS and on-screen PTT; TWS physical-button behavior has not yet been tested.
+- Updated `docs/TEST_PLAN.md` with these real-device observations. Initial wired and Bluetooth audio paths are confirmed in this test setup, but simultaneous full-duplex, channel isolation, screen-off, Bluetooth physical-button, reconnect, and host-failover tests remain outstanding.
+- Updated the active-room settings copy from “Bluetooth headset button” to “Headset physical button” because the same Android media-key mapping applies to wired inline remotes as well as Bluetooth headsets. Internal preference/API identifiers remain backward-compatible.
+- Code commit for UI copy: `217b03602fc29f764df423e224a6b1c8052ae643`; test-plan commit: `024677cd78fbee45ac78e3fdc435080e009c178a`.
+- CI for the latest documentation head is pending at time of handoff (run `45643136550`); CI for the UI-copy commit is running (runs `45643117348` and `45643096733`). Check latest head CI before issuing a replacement APK.
+- Important behavior note: current PTT mode setting is shared for all mapped headset media keys, despite the legacy internal name `BluetoothPttMode`. Toggle is the proven setting for the user's wired inline-button test; do not assume all headsets support reliable press/release events.
