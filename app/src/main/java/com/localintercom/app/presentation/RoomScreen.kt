@@ -1,6 +1,7 @@
 package com.localintercom.app.presentation
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.compose.foundation.clickable
@@ -29,10 +30,14 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -95,18 +100,31 @@ fun RoomApp(viewModel: RoomViewModel) {
         }
     }
 
-    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-        val room = state.activeRoom
-        if (room == null) {
-            RoomSetupScreen(
-                state = state,
-                viewModel = viewModel,
-                onCreateRoom = { runWithMicrophonePermission(viewModel::createRoom) },
-                onJoinSelectedRoom = { runWithMicrophonePermission(viewModel::joinSelectedRoom) },
-                onJoinManualRoom = { runWithMicrophonePermission(viewModel::joinManualRoom) }
-            )
-        } else {
-            ActiveRoomScreen(room, state, viewModel)
+    val snackbarHostState = remember { SnackbarHostState() }
+    LaunchedEffect(state.message) {
+        state.message?.let { message ->
+            snackbarHostState.showSnackbar(message)
+            viewModel.clearMessage()
+        }
+    }
+
+    Scaffold(snackbarHost = { SnackbarHost(hostState = snackbarHostState) }) { contentPadding ->
+        Surface(
+            modifier = Modifier.fillMaxSize().padding(contentPadding),
+            color = MaterialTheme.colorScheme.background
+        ) {
+            val room = state.activeRoom
+            if (room == null) {
+                RoomSetupScreen(
+                    state = state,
+                    viewModel = viewModel,
+                    onCreateRoom = { runWithMicrophonePermission(viewModel::createRoom) },
+                    onJoinSelectedRoom = { runWithMicrophonePermission(viewModel::joinSelectedRoom) },
+                    onJoinManualRoom = { runWithMicrophonePermission(viewModel::joinManualRoom) }
+                )
+            } else {
+                ActiveRoomScreen(room, state, viewModel)
+            }
         }
     }
 }
@@ -131,6 +149,8 @@ private fun RoomSetupScreen(
             onValueChange = viewModel::onDisplayNameChanged,
             label = { Text("Your display name") },
             singleLine = true,
+            isError = state.displayNameError != null,
+            supportingText = state.displayNameError?.let { error -> { Text(error) } },
             modifier = Modifier.fillMaxWidth()
         )
 
@@ -250,6 +270,7 @@ private fun DiscoveredRoomCard(room: DiscoveredRoom, selected: Boolean, onClick:
 
 @Composable
 private fun ActiveRoomScreen(room: RoomSession, state: RoomScreenState, viewModel: RoomViewModel) {
+    val context = LocalContext.current
     var isPttPressed by remember(room.localMemberId) { mutableStateOf(false) }
     Column(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
@@ -264,8 +285,37 @@ private fun ActiveRoomScreen(room: RoomSession, state: RoomScreenState, viewMode
         Text(state.discoveryState.message, style = MaterialTheme.typography.bodySmall)
 
         if (room.isHost) {
-            Text("Share this session token with people joining your room:", style = MaterialTheme.typography.bodyMedium)
-            SelectableToken(room.joinToken.orEmpty())
+            Card {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text("Invite people", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Text("Share these local network details with people you want to invite.")
+                    Text("Session token", style = MaterialTheme.typography.labelMedium)
+                    SelectableToken(room.joinToken.orEmpty())
+                    Button(
+                        onClick = {
+                            val invite = """
+                                You are invited to join "${room.roomName}" on Local Intercom.
+
+                                Host: ${room.hostName}
+                                Address: ${room.hostAddress.endpoint(room.port)}
+                                Session token: ${room.joinToken.orEmpty()}
+
+                                Connect your phone to the same Wi-Fi, open Local Intercom, enter your display name, then join using the host IP, port and session token.
+                            """.trimIndent()
+                            val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_SUBJECT, "Local Intercom invitation: ${room.roomName}")
+                                putExtra(Intent.EXTRA_TEXT, invite)
+                            }
+                            context.startActivity(Intent.createChooser(sendIntent, "Share room invitation"))
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("Share invitation") }
+                }
+            }
         }
 
         Text("Channel", style = MaterialTheme.typography.titleLarge)
