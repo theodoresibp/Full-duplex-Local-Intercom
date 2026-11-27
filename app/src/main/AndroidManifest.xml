@@ -18,6 +18,7 @@
         android:allowBackup="true"
         android:usesCleartextTraffic="true"
         android:label="Local Intercom"
+        android:icon="@drawable/ic_intercom_logo"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
         <service
