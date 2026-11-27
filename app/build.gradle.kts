@@ -40,6 +40,7 @@ dependencies {
     implementation(libs.ktor.client.cio)
     implementation(libs.ktor.client.websockets)
     implementation(libs.webrtc.android)
+    implementation(libs.zxing.core)
     debugImplementation("androidx.compose.ui:ui-tooling")
     testImplementation(libs.junit)
 }
