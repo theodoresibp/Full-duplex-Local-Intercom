@@ -83,6 +83,23 @@ class RoomViewModel(private val repository: RoomRepository) : ViewModel() {
     fun selectRoom(room: DiscoveredRoom) = _state.update { it.copy(selectedRoom = room, message = null) }
     fun refreshDiscovery() = repository.refreshDiscovery()
 
+    fun applyRoomInvite(hostAddress: String, port: Int, token: String) {
+        val normalizedHost = hostAddress.trim().removePrefix("[").removeSuffix("]")
+        if (normalizedHost.isBlank() || port !in 1..65535 || token.isBlank()) {
+            showMessage("This invitation link is incomplete or invalid.")
+            return
+        }
+        _state.update {
+            it.copy(
+                manualHostAddress = normalizedHost,
+                manualPort = port.toString(),
+                sessionToken = token,
+                selectedRoom = null,
+                message = "Invitation loaded. Enter your name, then tap Join using IP."
+            )
+        }
+    }
+
     fun createRoom() {
         if (!validateDisplayName()) return
         launchOperation { createRoom(_state.value.roomName, _state.value.displayName) }
