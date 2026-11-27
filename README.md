@@ -9,6 +9,9 @@ Native Android intercom for a private Wi-Fi LAN, designed for up to six particip
 - Embedded Ktor WebSocket server for room membership and signaling.
 - Android NSD/mDNS discovery, with manual IP/port join fallback.
 - Random 256-bit room session token; six participants maximum including host.
+- Host-generated QR invitation and shareable `localintercom://join` deep link; invite data pre-fills the manual join fields while still requiring a participant display name and an explicit Join tap.
+- Participant roster cards show display name, host role, current channel, and connected presence.
+- Local Intercom speech-wave launcher icon.
 - Versioned room snapshots, member join/leave updates, and host heartbeat.
 - The host opens a local signaling connection too, so it participates in the same peer mesh as guests.
 
@@ -25,7 +28,7 @@ Native Android intercom for a private Wi-Fi LAN, designed for up to six particip
 
 ## Not yet implemented or physically validated
 
-- QR-code joining, room persistence, account identity, and configurable headset button mappings.
+- Room persistence, account identity, microphone level metering, per-participant speaking activity, incoming audio metering, and a standalone microphone test are not yet implemented. QR invitations and custom-scheme deep links are now implemented in the host UI; physical scan/open validation remains pending.
 - Toggle-to-talk fallback for headsets that do not expose reliable press/release events.
 - Physical validation on two through six Android devices, including host handover, screen-off operation, Bluetooth reconnect, latency, packet loss, battery, and thermal behavior.
 - CI build/test status is not a substitute for real-device audio testing.
