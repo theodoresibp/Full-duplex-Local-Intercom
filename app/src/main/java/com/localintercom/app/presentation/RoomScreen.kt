@@ -579,17 +579,21 @@ private fun RoomInviteQrCode(value: String) {
         }.getOrNull()
     }
     if (bitmap != null) {
-        Surface(
-            shape = RoundedCornerShape(16.dp),
-            color = androidx.compose.ui.graphics.Color.White,
-            modifier = Modifier.align(Alignment.CenterHorizontally)
+        androidx.compose.foundation.layout.Box(
+            modifier = Modifier.fillMaxWidth(),
+            contentAlignment = Alignment.Center
         ) {
-            Image(
-                bitmap = bitmap.asImageBitmap(),
-                contentDescription = "QR code for joining this Local Intercom room",
-                modifier = Modifier.padding(12.dp).height(224.dp),
-                contentScale = ContentScale.Fit
-            )
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = androidx.compose.ui.graphics.Color.White
+            ) {
+                Image(
+                    bitmap = bitmap.asImageBitmap(),
+                    contentDescription = "QR code for joining this Local Intercom room",
+                    modifier = Modifier.padding(12.dp).height(224.dp),
+                    contentScale = ContentScale.Fit
+                )
+            }
         }
     } else {
         Text("Could not generate the invitation QR code.", color = MaterialTheme.colorScheme.error)
