@@ -18,6 +18,11 @@ CI unit tests cover room rules, six-member capacity, membership removal, and cha
 | TC-12 | Host loss | Basic deterministic handover implemented; device test pending | New coordinator is elected and room state is restored after heartbeat timeout |
 | TC-13 | Security | Partial | Media is encrypted and unauthorized room/signaling targets are rejected; signaling WebSocket is still cleartext on the LAN |
 | TC-14 | Six-device soak | Not validated | Stable session under sustained use; record battery, heat, latency and packet loss |
+| TC-15 | QR invitation | Implemented; device test pending | Host QR opens the app on a second device and pre-fills host, port and token |
+| TC-16 | Share-link invitation | Implemented; device test pending | Shared custom-scheme link opens the app where the receiving app recognizes it; name is still required before Join |
+| TC-17 | Participant roster | Implemented; device test pending | Roster reflects live join/leave changes, host role, channel, and connected presence |
+| TC-18 | Microphone level and voice activity | Not implemented | Local and remote audio levels and active speaker identity update from real WebRTC audio telemetry |
+| TC-19 | Microphone test | Not implemented | User can verify microphone input before joining without transmitting to the room |
 
 ## Device/network matrix
 
