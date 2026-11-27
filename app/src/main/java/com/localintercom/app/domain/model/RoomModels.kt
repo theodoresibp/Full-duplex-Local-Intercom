@@ -1,6 +1,5 @@
 package com.localintercom.app.domain.model
 
-
 enum class RoomStatus {
     OPEN,
     FULL,
@@ -16,7 +15,8 @@ enum class RoomConnectionStatus {
 data class RoomMember(
     val id: String,
     val displayName: String,
-    val isHost: Boolean
+    val isHost: Boolean,
+    val channelId: String = IntercomChannels.GENERAL
 )
 
 data class RoomSession(
@@ -28,8 +28,10 @@ data class RoomSession(
     val connectionStatus: RoomConnectionStatus,
     val hostAddress: String,
     val port: Int,
-    /** Present only on the host device. Never included in discovery metadata or room broadcasts. */
-    val joinToken: String? = null
+    /** Present on the host and in-memory participant session only; never broadcast in room state. */
+    val joinToken: String? = null,
+    val localMemberId: String = "",
+    val selectedChannelId: String = IntercomChannels.GENERAL
 ) {
     val status: RoomStatus
         get() = when {

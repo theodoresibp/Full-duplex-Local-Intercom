@@ -1,10 +1,10 @@
 # Network and Signaling Protocol
 
-Milestone 1 uses WebSocket for room control on the local Wi-Fi network. WebRTC and audio transport are planned for a later milestone and are not part of this protocol implementation.
+The Ktor WebSocket server carries room control and WebRTC signaling only. It never carries audio. Audio media travels directly between peers over WebRTC DTLS-SRTP.
 
 ## Versioned envelope
 
-Every WebSocket message is a UTF-8 JSON text frame with this envelope:
+Every WebSocket message is a UTF-8 JSON text frame:
 
 ```json
 {
@@ -15,34 +15,48 @@ Every WebSocket message is a UTF-8 JSON text frame with this envelope:
 }
 ```
 
-Receivers reject unsupported protocol versions and unknown or malformed requests. Frames are limited to 8 KiB. Request IDs correlate a join request with its acceptance or rejection.
+Unsupported protocol versions and malformed envelopes are rejected or ignored. Frames are limited to 8 KiB. Request IDs correlate a join request with its acceptance or rejection.
 
-## Milestone 1 events
+## Room events
 
-- `join_request`: `roomId`, `displayName`, and `sessionToken`. Manual-IP joins may send an empty room ID; the host resolves it after validating the token.
+- `join_request`: `roomId`, `displayName`, and `sessionToken`. Manual-IP joins may send an empty room ID. The host's own local signaling socket additionally sends its pre-existing host `memberId` and a separate private `hostToken` that is never shared with guests. During host handover, existing guests send their previous `memberId` to restore their roster identity.
 - `join_accepted`: assigned `memberId` and the current room snapshot.
-- `join_rejected`: a machine-readable `reason` and user-facing `message`; reasons include `invalid_token`, `room_full`, `room_not_found`, and `room_closed`.
-- `member_joined`: the newly accepted member.
-- `member_left`: the member ID that left.
-- `room_state`: room ID/name, host name, current members, and open/full/closed status.
-- `heartbeat`: a timestamp sent by the host every five seconds while the room is running.
+- `join_rejected`: machine-readable `reason` and user-facing `message`.
+- `member_joined` / `member_left`: membership notifications.
+- `room_state`: room ID/name, host name, members, each member's `channelId`, and open/full/closed status.
+- `channel_changed`: authenticated socket requests a new `channelId`; the server accepts only one of the five known channels and broadcasts the updated room snapshot.
+- `heartbeat`: host sends a timestamp every two seconds. Clients declare the host unavailable after 6.5 seconds without room traffic and start deterministic host election.
 - `leave_room`: sent by a client before a normal disconnect.
 
-All events use the versioned envelope. Room snapshots include the host as a member. The host enforces the six-member limit, including itself, and broadcasts an updated snapshot after joins and leaves.
+The five channel IDs are `general`, `team_a`, `team_b`, `security`, and `emergency`.
+
+## WebRTC signaling relay
+
+A peer sends a `signaling` event with:
+
+- `toMemberId`: the intended peer in the current room.
+- `signalType`: `offer`, `answer`, or `ice_candidate`.
+- `data`: SDP or ICE candidate fields.
+
+The server derives the sender identity from the authenticated WebSocket membership and forwards the event only to the requested active room member, adding `fromMemberId`. It does not accept a sender ID supplied by the client. Audio is not included in these messages.
+
+The current mesh uses one PeerConnection per remote participant. The peer with the lexicographically lower member ID initiates the offer to avoid offer glare. ICE uses host candidates only; no STUN/TURN service is configured.
 
 ## LAN discovery and joining
 
-- Advertise and browse for the DNS-SD service type `_localintercom._tcp.`.
-- TXT attributes contain room ID, room name, host display name, member count, maximum member count, and status.
-- The session token is never included in discovery metadata. The host shares it from the room screen; a joining user enters it before connecting.
-- The service endpoint is a WebSocket at `ws://<host-address>:<port>/room`.
-- If multicast discovery is unavailable or blocked by the network, users can enter the host IP address and port manually.
-- The router must permit client-to-client traffic on the local Wi-Fi network.
+- DNS-SD service type: `_localintercom._tcp.`.
+- TXT attributes: room ID, room name, host display name, member count, maximum member count, and status.
+- Session token is never published in discovery metadata.
+- WebSocket endpoint: `ws://<host-address>:<port>/room`.
+- Manual IP/port join is available when multicast discovery is unavailable.
+- The router must permit client-to-client traffic.
 
 ## Validation and security
 
-- Display names are 2–24 characters; room names are 2–32 characters.
+- Display names: 2–24 characters; room names: 2–32 characters.
 - Maximum six active participants, including the host.
-- Session tokens are generated with 256 bits of randomness and checked by the host before accepting a join.
-- A room ID supplied by discovery must match the host's room ID. Manual joins omit the ID and still require the session token.
-- No audio or WebRTC signaling events are implemented in this milestone.
+- Session tokens contain 256 bits of randomness and are checked before a guest is accepted.
+- Manual joins still require the session token.
+- WebSocket signaling currently uses cleartext `ws://`; the session token and signaling data can be observed by an attacker with access to the LAN. Use only a trusted, WPA-protected local network and do not expose the port externally.
+- WebRTC media uses DTLS-SRTP encryption.
+- Host handover restores the room roster using the room session token and previous member IDs. Explicit room epochs, per-member reconnect credentials, and per-channel signaling ACLs are not implemented yet.

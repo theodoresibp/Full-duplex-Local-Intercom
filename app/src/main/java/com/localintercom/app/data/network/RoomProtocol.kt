@@ -1,5 +1,6 @@
 package com.localintercom.app.data.network
 
+import com.localintercom.app.domain.model.IntercomChannels
 import com.localintercom.app.domain.model.RoomMember
 import com.localintercom.app.domain.model.RoomStatus
 import org.json.JSONArray
@@ -15,9 +16,16 @@ internal object RoomProtocol {
     const val JOIN_REJECTED = "join_rejected"
     const val MEMBER_JOINED = "member_joined"
     const val MEMBER_LEFT = "member_left"
+    const val MEMBER_REJOINED = "member_rejoined"
     const val ROOM_STATE = "room_state"
     const val HEARTBEAT = "heartbeat"
     const val LEAVE_ROOM = "leave_room"
+    const val SIGNALING = "signaling"
+    const val CHANNEL_CHANGED = "channel_changed"
+
+    const val SIGNAL_OFFER = "offer"
+    const val SIGNAL_ANSWER = "answer"
+    const val SIGNAL_ICE = "ice_candidate"
 
     data class Event(val name: String, val requestId: String, val payload: JSONObject)
 
@@ -28,14 +36,21 @@ internal object RoomProtocol {
             .put("requestId", requestId)
             .put("payload", payload)
 
-    fun joinRequest(roomId: String, displayName: String, sessionToken: String): JSONObject =
-        createEvent(
-            JOIN_REQUEST,
-            JSONObject()
-                .put("roomId", roomId)
-                .put("displayName", displayName)
-                .put("sessionToken", sessionToken)
-        )
+    fun joinRequest(
+        roomId: String,
+        displayName: String,
+        sessionToken: String,
+        memberId: String? = null,
+        hostToken: String? = null
+    ): JSONObject {
+        val payload = JSONObject()
+            .put("roomId", roomId)
+            .put("displayName", displayName)
+            .put("sessionToken", sessionToken)
+        if (!memberId.isNullOrBlank()) payload.put("memberId", memberId)
+        if (!hostToken.isNullOrBlank()) payload.put("hostToken", hostToken)
+        return createEvent(JOIN_REQUEST, payload)
+    }
 
     fun parse(raw: String): Event {
         val json = JSONObject(raw)
@@ -52,6 +67,7 @@ internal object RoomProtocol {
             .put("id", member.id)
             .put("displayName", member.displayName)
             .put("isHost", member.isHost)
+            .put("channelId", member.channelId)
 
     fun membersToJson(members: List<RoomMember>): JSONArray =
         JSONArray().also { array -> members.forEach { array.put(memberToJson(it)) } }
@@ -61,7 +77,9 @@ internal object RoomProtocol {
             array.optJSONObject(index)?.let { json ->
                 val id = json.optString("id").takeIf(String::isNotBlank) ?: return@let null
                 val displayName = json.optString("displayName").takeIf(String::isNotBlank) ?: return@let null
-                RoomMember(id, displayName, json.optBoolean("isHost"))
+                val channelId = json.optString("channelId", IntercomChannels.GENERAL)
+                    .takeIf(IntercomChannels::contains) ?: IntercomChannels.GENERAL
+                RoomMember(id, displayName, json.optBoolean("isHost"), channelId)
             }
         }
 

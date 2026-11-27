@@ -1,32 +1,46 @@
 # Test Plan
 
-All targets below are acceptance goals until validated on physical devices.
+CI unit tests cover room rules, six-member capacity, membership removal, and channel roster updates. The following acceptance scenarios still require physical-device validation unless marked otherwise.
 
-| ID | Scenario | Expected result |
-|---|---|---|
-| TC-01 | Create room | Any participant can create a room and becomes coordinator |
-| TC-02 | Discover room | Nearby room appears over LAN when NSD multicast is available |
-| TC-03 | Fallback join | QR/manual IP join works when multicast discovery is blocked |
-| TC-04 | Capacity | Sixth participant joins; seventh is rejected cleanly |
-| TC-05 | Full duplex | At least two participants transmit and are heard simultaneously |
-| TC-06 | PTT | Local microphone is sent only while PTT is active |
-| TC-07 | Channel isolation | Only the selected channel is played |
-| TC-08 | Screen off | Existing session continues with screen locked |
-| TC-09 | Headset PTT | Supported headset button controls PTT; unsupported behavior has a configurable fallback |
-| TC-10 | Headset routing | Audio moves correctly on connect/disconnect/reconnect |
-| TC-11 | Network recovery | Temporary Wi-Fi interruption recovers or reports a clear failure |
-| TC-12 | Host loss | New coordinator is elected and room state is restored |
-| TC-13 | Security | Media is encrypted and unauthorized room/channel events are rejected |
-| TC-14 | Six-device soak | Stable session under sustained use; record battery, heat, latency and packet loss |
+| ID | Scenario | Implementation status | Expected result |
+|---|---|---|---|
+| TC-01 | Create room | Implemented | Any participant can create a room and becomes coordinator |
+| TC-02 | Discover room | Implemented; device test pending | Nearby room appears over LAN when NSD multicast is available |
+| TC-03 | Fallback join | Implemented; device test pending | Manual IP/port join works when multicast discovery is blocked |
+| TC-04 | Capacity | Implemented; unit tested | Sixth participant joins; seventh is rejected cleanly |
+| TC-05 | Full duplex | Implemented in WebRTC mesh; device test pending | At least two participants transmit and are heard simultaneously |
+| TC-06 | PTT | Implemented in UI/audio track; device test pending | Local microphone is sent only while PTT is active |
+| TC-07 | Channel isolation | Implemented as receiver-side track gating; device test pending | Only the selected channel is played |
+| TC-08 | Screen off | Foreground service implemented; device test pending | Existing session continues with screen locked |
+| TC-09 | Headset PTT | Partially device-tested | Wired inline-button PTT works in Toggle mode on the user's test device; Press & Hold did not work. Bluetooth TWS physical-button behavior remains untested; on-screen PTT works. Click-only/key-up behavior varies by headset and needs further validation |
+| TC-10 | Headset routing | Initial wired and Bluetooth TWS audio paths device-tested; reconnect test pending | Two-device communication worked with one wired headset and one Bluetooth TWS; reconnect and route-switch behavior still need validation |
+| TC-11 | Network recovery | Basic host-disconnect recovery implemented; transient Wi-Fi interruption not validated | Session recovers after a supported host reconnect or reports a clear failure |
+| TC-12 | Host loss | Basic deterministic handover implemented; device test pending | New coordinator is elected and room state is restored after heartbeat timeout |
+| TC-13 | Security | Partial | Media is encrypted and unauthorized room/signaling targets are rejected; signaling WebSocket is still cleartext on the LAN |
+| TC-14 | Six-device soak | Not validated | Stable session under sustained use; record battery, heat, latency and packet loss |
+| TC-15 | QR invitation | Implemented; device test pending | Host QR opens the app on a second device and pre-fills host, port and token |
+| TC-16 | Share-link invitation | Implemented; device test pending | Shared custom-scheme link opens the app where the receiving app recognizes it; name is still required before Join |
+| TC-17 | Participant roster | Implemented; device test pending | Roster reflects live join/leave changes, host role, channel, and connected presence |
+| TC-18 | Microphone level and voice activity | Not implemented | Local and remote audio levels and active speaker identity update from real WebRTC audio telemetry |
+| TC-19 | Microphone test | Not implemented | User can verify microphone input before joining without transmitting to the room |
 
 ## Device/network matrix
 
 - At least two Android OEMs and multiple Android versions.
 - Wi-Fi router with client isolation disabled.
-- Repeat with multicast blocked to verify fallback discovery.
+- Repeat with multicast blocked to verify manual-IP fallback.
 - Bluetooth headsets from different vendors and button behaviors.
 - Screen on/off, app backgrounded, Bluetooth reconnect, audio focus interruption.
+- Test with two devices first, then add devices up to six.
 
 ## Metrics
 
 Record device model, Android version, Wi-Fi band, RSSI, participant count, active speakers, median/p95 end-to-end latency, packet loss, jitter, CPU, battery drain and thermal state.
+
+
+## User device-test notes — 2026-11-25
+
+- Two Android devices successfully communicated over the local Wi-Fi room.
+- Device A used a wired headset with an inline physical button. PTT worked in Toggle mode; Press & Hold did not work on this headset.
+- Device B used Bluetooth TWS. PTT was operated using the in-app on-screen control; the TWS physical touch/button has not yet been tested for media-key delivery.
+- This confirms a successful initial two-device audio path, but does not yet verify simultaneous full-duplex speaking, channel isolation, screen-off operation, Bluetooth physical-button mapping, reconnect, or host failover.

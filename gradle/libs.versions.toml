@@ -6,9 +6,11 @@ activityCompose = "1.13.0"
 lifecycle = "2.11.0"
 coreKtx = "1.17.0"
 ktor = "3.6.1"
+webrtc = "150.7871.08"
 coroutines = "1.11.0"
 lifecycleViewModel = "2.11.1"
 junit = "4.13.2"
+zxing = "3.5.4"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -26,7 +28,9 @@ ktor-server-websockets = { group = "io.ktor", name = "ktor-server-websockets-jvm
 ktor-client-core = { group = "io.ktor", name = "ktor-client-core-jvm", version.ref = "ktor" }
 ktor-client-cio = { group = "io.ktor", name = "ktor-client-cio-jvm", version.ref = "ktor" }
 ktor-client-websockets = { group = "io.ktor", name = "ktor-client-websockets-jvm", version.ref = "ktor" }
+webrtc-android = { group = "io.github.webrtc-sdk", name = "android", version.ref = "webrtc" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
+zxing-core = { group = "com.google.zxing", name = "core", version.ref = "zxing" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

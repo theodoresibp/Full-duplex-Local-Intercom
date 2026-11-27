@@ -98,5 +98,52 @@ class RoomRulesTest {
         assertFalse(RoomRules.isValidPort(65_536))
     }
 
+    @Test
+    fun participantChannelChangeUpdatesOnlyThatMember() = runBlocking {
+        val roster = RoomRoster(hostMember())
+        val guest = RoomMember("member-1", "Guest", isHost = false)
+        roster.tryAdd(guest)
+
+        val change = roster.updateChannel(guest.id, IntercomChannels.TEAM_A)
+
+        assertNotNull(change)
+        assertEquals(IntercomChannels.GENERAL, change!!.members.first().channelId)
+        assertEquals(IntercomChannels.TEAM_A, change.member.channelId)
+        assertEquals(IntercomChannels.TEAM_A, roster.snapshot().last().channelId)
+    }
+
+    @Test
+    fun unknownChannelCannotBeAppliedToRoster() = runBlocking {
+        val roster = RoomRoster(hostMember())
+        roster.tryAdd(RoomMember("member-1", "Guest", isHost = false))
+
+        assertNull(roster.updateChannel("member-1", "not-a-channel"))
+        assertEquals(IntercomChannels.GENERAL, roster.snapshot().last().channelId)
+    }
+
+    @Test
+    fun hostChannelCanAlsoBeChanged() = runBlocking {
+        val roster = RoomRoster(hostMember())
+
+        val change = roster.updateChannel("host", IntercomChannels.EMERGENCY)
+
+        assertNotNull(change)
+        assertTrue(change!!.member.isHost)
+        assertEquals(IntercomChannels.EMERGENCY, roster.snapshot().first().channelId)
+    }
+
+    @Test
+    fun restoredRosterKeepsExistingParticipantsAndChannels() = runBlocking {
+        val newHost = RoomMember("member-1", "New host", isHost = true, channelId = IntercomChannels.TEAM_A)
+        val guest = RoomMember("member-2", "Guest", isHost = false, channelId = IntercomChannels.SECURITY)
+
+        val roster = RoomRoster(newHost, listOf(newHost, guest))
+
+        val snapshot = roster.snapshot()
+        assertEquals(listOf("member-1", "member-2"), snapshot.map(RoomMember::id))
+        assertEquals(IntercomChannels.TEAM_A, snapshot[0].channelId)
+        assertEquals(IntercomChannels.SECURITY, snapshot[1].channelId)
+    }
+
     private fun hostMember() = RoomMember("host", "Host", isHost = true)
 }

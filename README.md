@@ -1,39 +1,69 @@
 # Full-duplex Local Intercom
 
-An Android-native, LAN-first intercom project for up to six participants per room.
+Native Android intercom for a private Wi-Fi LAN, designed for up to six participants per room. No cloud service, account, STUN, or TURN server is required for the intended same-LAN setup.
 
-## Implemented: Milestone 1 — Room management and LAN discovery
+## Implemented
 
-- Create a room with a display name and room name. The creator runs an embedded Ktor WebSocket server and is the host.
-- Advertise and discover rooms on the local network through Android NSD/mDNS.
-- Join a discovered room or enter the host IP address, port, and session token manually.
-- Enforce a six-member limit, including the host, and validate the room session token.
-- Show room and member state, including real-time joins and departures, and leave/close a room.
-- Use a versioned WebSocket control protocol. See [docs/NETWORK_PROTOCOL.md](docs/NETWORK_PROTOCOL.md).
+### Room management and discovery
+- Any device can create a room and become its host.
+- Embedded Ktor WebSocket server for room membership and signaling.
+- Android NSD/mDNS discovery, with manual IP/port join fallback.
+- Random 256-bit room session token; six participants maximum including host.
+- Host-generated QR invitation and shareable `localintercom://join` deep link; invite data pre-fills the manual join fields while still requiring a participant display name and an explicit Join tap.
+- Participant roster cards show display name, host role, current channel, and connected presence.
+- Local Intercom speech-wave launcher icon.
+- Versioned room snapshots, member join/leave updates, and host heartbeat.
+- The host opens a local signaling connection too, so it participates in the same peer mesh as guests.
 
-The host must keep the app process running while hosting. Closing/leaving the room stops its server and withdraws its NSD advertisement. Background hosting and recovery after host process loss are not implemented.
+### Audio and channels
+- WebRTC peer-to-peer audio mesh: one direct connection per remote participant (up to five per device).
+- Audio is sent directly between devices; the host does not relay or mix media.
+- DTLS-SRTP protects WebRTC media. ICE is configured without STUN/TURN for same-LAN host candidates.
+- Five logical channels: General, Team A, Team B, Security, and Emergency.
+- Channel selection is shared through room state; remote tracks outside the selected channel are muted locally.
+- Hold-to-talk gates the local microphone track. Multiple participants can talk simultaneously.
+- Microphone foreground service keeps the active session alive while the screen is off.
+- Android MediaSession handles supported Bluetooth headset media-button press/release events as PTT; media next/previous keys cycle through channels.
+- Audio routing prefers a connected Bluetooth communication headset and falls back to the phone speaker.
 
-## Not implemented yet
+## Not yet implemented or physically validated
 
-WebRTC, audio transport, push-to-talk, Bluetooth headset controls, host recovery, and persistent room storage are not part of Milestone 1.
+- Room persistence, account identity, microphone level metering, per-participant speaking activity, incoming audio metering, and a standalone microphone test are not yet implemented. QR invitations and custom-scheme deep links are now implemented in the host UI; physical scan/open validation remains pending.
+- Toggle-to-talk fallback for headsets that do not expose reliable press/release events.
+- Physical validation on two through six Android devices, including host handover, screen-off operation, Bluetooth reconnect, latency, packet loss, battery, and thermal behavior.
+- CI build/test status is not a substitute for real-device audio testing.
 
-## Requirements and network notes
+A basic deterministic host handover is implemented: clients monitor the host heartbeat, elect participants in stable member-ID order, restore the room roster on the elected device, and reconnect through NSD. This flow is not yet physically validated and depends on local multicast discovery.
+
+The current WebSocket signaling endpoint uses `ws://` on the local network; the session token is therefore not encrypted at the signaling layer. Use only a trusted Wi-Fi network and do not expose the host port to an untrusted network. WebRTC media itself is protected by DTLS-SRTP.
+
+## Requirements
 
 - Android minimum SDK: API 29 (Android 10).
-- Built with Kotlin and Jetpack Compose, using MVVM and Clean Architecture.
-- Both devices need to be on a reachable local network. The access point must allow client-to-client traffic; client/AP isolation can prevent joining.
-- Discovery depends on Wi-Fi multicast/mDNS. If multicast is unavailable, use manual join with the host IP, port, and session token.
-- No internet service is required for local room signaling. Do not expose the host port to untrusted networks: Milestone 1 uses a room session token but does not include transport encryption or account-based identity.
+- Kotlin, Jetpack Compose, MVVM, Ktor, coroutines, and WebRTC Android SDK.
+- Router/AP must allow client-to-client traffic; disable AP/client isolation.
+- Discovery requires mDNS/multicast. Manual IP join remains available if multicast is blocked.
+- Microphone permission is requested before creating or joining a room.
 
 ## Build and test
 
-From the repository root:
+The repository includes `gradlew` and `gradlew.bat` bootstrap scripts. The first run downloads the pinned Gradle distribution from the official Gradle distribution host.
 
 ```bash
-./gradlew :app:testDebugUnitTest
-./gradlew :app:assembleDebug
+./gradlew :app:testDebugUnitTest :app:assembleDebug
 ```
 
-## Project documentation
+On Windows:
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/NETWORK_PROTOCOL.md](docs/NETWORK_PROTOCOL.md), [docs/AUDIO_ENGINE.md](docs/AUDIO_ENGINE.md), and [docs/TEST_PLAN.md](docs/TEST_PLAN.md).
+```bat
+gradlew.bat :app:testDebugUnitTest :app:assembleDebug
+```
+
+You can also open the project in Android Studio and run the same Gradle tasks.
+
+## Documentation
+
+- [Architecture](docs/ARCHITECTURE.md)
+- [Network and signaling protocol](docs/NETWORK_PROTOCOL.md)
+- [Audio engine](docs/AUDIO_ENGINE.md)
+- [Test plan](docs/TEST_PLAN.md)
