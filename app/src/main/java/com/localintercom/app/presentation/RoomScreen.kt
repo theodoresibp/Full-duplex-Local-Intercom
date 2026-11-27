@@ -1,9 +1,13 @@
 package com.localintercom.app.presentation
 
 import android.Manifest
+import android.graphics.Bitmap
+import android.graphics.Color
+import android.net.Uri
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
@@ -43,6 +47,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -60,6 +66,8 @@ import com.localintercom.app.domain.model.RoomMember
 import com.localintercom.app.domain.model.RoomSession
 import com.localintercom.app.domain.model.RoomStatus
 import com.localintercom.app.service.IntercomAudioService
+import com.google.zxing.BarcodeFormat
+import com.google.zxing.qrcode.QRCodeWriter
 
 @Composable
 fun RoomApp(viewModel: RoomViewModel) {
@@ -290,20 +298,33 @@ private fun ActiveRoomScreen(room: RoomSession, state: RoomScreenState, viewMode
                     modifier = Modifier.fillMaxWidth().padding(14.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
+                    val inviteLink = remember(room.roomId, room.hostAddress, room.port, room.joinToken) {
+                        Uri.Builder()
+                            .scheme("localintercom")
+                            .authority("join")
+                            .appendQueryParameter("host", room.hostAddress)
+                            .appendQueryParameter("port", room.port.toString())
+                            .appendQueryParameter("token", room.joinToken.orEmpty())
+                            .build()
+                            .toString()
+                    }
                     Text("Invite people", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                    Text("Share these local network details with people you want to invite.")
+                    Text("Scan this QR code or share the link. Guests must be on the same Wi-Fi and enter their name before joining.")
+                    RoomInviteQrCode(inviteLink)
+                    Text("Invitation link", style = MaterialTheme.typography.labelMedium)
+                    SelectionContainer { Text(inviteLink, style = MaterialTheme.typography.bodySmall) }
                     Text("Session token", style = MaterialTheme.typography.labelMedium)
                     SelectableToken(room.joinToken.orEmpty())
                     Button(
                         onClick = {
                             val invite = """
-                                You are invited to join "${room.roomName}" on Local Intercom.
+                                Join "${room.roomName}" on Local Intercom.
 
-                                Host: ${room.hostName}
-                                Address: ${room.hostAddress.endpoint(room.port)}
-                                Session token: ${room.joinToken.orEmpty()}
+                                Open this invitation link:
+                                $inviteLink
 
-                                Connect your phone to the same Wi-Fi, open Local Intercom, enter your display name, then join using the host IP, port and session token.
+                                Connect to the same Wi-Fi, open the link, enter your display name, then tap Join.
+                                If the link does not open automatically, use the QR code while Local Intercom is installed.
                             """.trimIndent()
                             val sendIntent = Intent(Intent.ACTION_SEND).apply {
                                 type = "text/plain"
@@ -313,7 +334,7 @@ private fun ActiveRoomScreen(room: RoomSession, state: RoomScreenState, viewMode
                             context.startActivity(Intent.createChooser(sendIntent, "Share room invitation"))
                         },
                         modifier = Modifier.fillMaxWidth()
-                    ) { Text("Share invitation") }
+                    ) { Text("Share invitation link") }
                 }
             }
         }
@@ -503,20 +524,75 @@ private fun SelectableToken(token: String) {
 
 @Composable
 private fun MemberRow(member: RoomMember) {
+    val channelName = IntercomChannels.all.firstOrNull { it.id == member.channelId }?.name ?: "General"
     Card(modifier = Modifier.fillMaxWidth()) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(14.dp),
-            horizontalArrangement = Arrangement.SpaceBetween
+            modifier = Modifier.fillMaxWidth().padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Column {
-                Text(member.displayName, fontWeight = FontWeight.Medium)
-                Text(
-                    IntercomChannels.all.firstOrNull { it.id == member.channelId }?.name ?: "General",
-                    style = MaterialTheme.typography.bodySmall
-                )
+            Surface(
+                shape = RoundedCornerShape(50),
+                color = MaterialTheme.colorScheme.secondaryContainer
+            ) {
+                androidx.compose.foundation.layout.Box(
+                    modifier = Modifier.padding(10.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        member.displayName.trim().take(1).uppercase(),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer
+                    )
+                }
             }
-            if (member.isHost) Text("Host", color = MaterialTheme.colorScheme.primary)
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(member.displayName, fontWeight = FontWeight.SemiBold)
+                    if (member.isHost) {
+                        Text("HOST", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                    }
+                }
+                Text("Channel · $channelName", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Text("●", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelSmall)
+                    Text("Connected", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
         }
+    }
+}
+
+@Composable
+private fun RoomInviteQrCode(value: String) {
+    val bitmap = remember(value) {
+        runCatching {
+            val matrix = QRCodeWriter().encode(value, BarcodeFormat.QR_CODE, 560, 560)
+            Bitmap.createBitmap(560, 560, Bitmap.Config.ARGB_8888).apply {
+                for (x in 0 until 560) {
+                    for (y in 0 until 560) {
+                        setPixel(x, y, if (matrix[x, y]) Color.BLACK else Color.WHITE)
+                    }
+                }
+            }
+        }.getOrNull()
+    }
+    if (bitmap != null) {
+        Surface(
+            shape = RoundedCornerShape(16.dp),
+            color = androidx.compose.ui.graphics.Color.White,
+            modifier = Modifier.align(Alignment.CenterHorizontally)
+        ) {
+            Image(
+                bitmap = bitmap.asImageBitmap(),
+                contentDescription = "QR code for joining this Local Intercom room",
+                modifier = Modifier.padding(12.dp).height(224.dp),
+                contentScale = ContentScale.Fit
+            )
+        }
+    } else {
+        Text("Could not generate the invitation QR code.", color = MaterialTheme.colorScheme.error)
     }
 }
 
